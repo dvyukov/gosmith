@@ -57,9 +57,9 @@ type Context struct {
 func NewContext(w io.Writer, incorrect, nonterminating bool) *Context {
 	c := &Context{w: w, incorrect: incorrect, nonterminating: nonterminating}
 	c.types = append(c.types, &Type{id: "bool", class: ClassBoolean, literal: func() string { return "false" }})
-	c.types = append(c.types, &Type{id: "int", class: ClassNumeric, literal: func() string { return "42" }})
+	c.types = append(c.types, &Type{id: "int", class: ClassNumeric, literal: func() string { return "1" }})
 	c.types = append(c.types, &Type{id: "int16", class: ClassNumeric, literal: func() string { return "int16(1)" }})
-	c.types = append(c.types, &Type{id: "float64", class: ClassNumeric, literal: func() string { return "42.42" }})
+	c.types = append(c.types, &Type{id: "float64", class: ClassNumeric, literal: func() string { return "1.1" }})
 	c.types = append(c.types, &Type{id: "string", class: ClassString, literal: func() string { return "\"foo\"" }})
 	c.boolType = c.types[0]
 	c.collectStatements()
