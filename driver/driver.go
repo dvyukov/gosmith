@@ -48,7 +48,8 @@ var (
 		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
 
 		// gccgo
-		regexp.MustCompile("internal compiler error: in fold_convert_loc"),
+		regexp.MustCompile("internal compiler error: in fold_convert_loc, at fold-const.c:2072"),
+		regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
 	}
 
 	knownSsadumpBugs = []*regexp.Regexp{

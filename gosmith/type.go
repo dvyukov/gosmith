@@ -32,6 +32,7 @@ const (
 	TraitHashable
 	TraitPrintable
 	TraitLenCapable
+	TraitFunction
 )
 
 type Type struct {
@@ -121,12 +122,22 @@ func (c *Context) typeLit() *Type {
 	case 2: // PointerType
 		return nil
 	case 3: // FunctionType
+		rlist := c.aTypeList(TraitAny)
+		alist := c.aTypeList(TraitAny)
+		return &Type{
+			id:    Id(fmt.Sprintf("func%v %v", c.formatTypeList(alist, true), c.formatTypeList(rlist, false))),
+			class: ClassFunction,
+			rtyp:  rlist,
+			atyp:  alist,
+			literal: func() string {
+				return fmt.Sprintf("((func%v %v)(nil))", c.formatTypeList(alist, true), c.formatTypeList(rlist, false))
+			}}
 		return nil
 	case 4: // InterfaceType
 		return nil
 	case 5: // SliceType
 		elem := c.aType(TraitAny)
-		return c.sliceOf(elem);
+		return c.sliceOf(elem)
 	case 6: // MapType
 		ktyp := c.aType(TraitHashable)
 		vtyp := c.aType(TraitAny)
@@ -153,6 +164,45 @@ func (c *Context) typeLit() *Type {
 	default:
 		panic("bad")
 	}
+}
+
+func (c *Context) formatTypeList(list []*Type, parens bool) string {
+	var buf bytes.Buffer
+	if parens || len(list) > 0 {
+		buf.Write([]byte{'('})
+	}
+	for i, t := range list {
+		if i != 0 {
+			buf.Write([]byte{','})
+		}
+		fmt.Fprintf(&buf, "%v", t.id)
+	}
+	if parens || len(list) > 0 {
+		buf.Write([]byte{')'})
+	}
+	return buf.String()
+}
+
+func (c *Context) formatRvalueList(list []*Type) string {
+	var buf bytes.Buffer
+	for i, t := range list {
+		if i != 0 {
+			buf.Write([]byte{','})
+		}
+		buf.WriteString(c.rvalue(t))
+	}
+	return buf.String()
+}
+
+func (c *Context) formatLvalueList(list []*Type) string {
+	var buf bytes.Buffer
+	for i, t := range list {
+		if i != 0 {
+			buf.Write([]byte{','})
+		}
+		buf.WriteString(c.lvalue(t))
+	}
+	return buf.String()
 }
 
 func (c *Context) chanOf(elem *Type) *Type {
@@ -203,6 +253,8 @@ func satisfiesTrait(t *Type, trait TypeTrait) bool {
 	case TraitLenCapable:
 		return t.class == ClassString || t.class == ClassSlice || t.class == ClassArray ||
 			t.class == ClassMap || t.class == ClassChan
+	case TraitFunction:
+		return t.class == ClassFunction
 	default:
 		panic("bad")
 	}

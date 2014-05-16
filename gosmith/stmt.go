@@ -57,20 +57,7 @@ func (c *Context) stmtOas() bool {
 
 func (c *Context) stmtAs() bool {
 	types := c.aTypeList(TraitAny)
-	for i, t := range types {
-		if i != 0 {
-			c.F(",")
-		}
-		c.F("%v", c.lvalue(t))
-	}
-	c.F(" = ")
-	for i, t := range types {
-		if i != 0 {
-			c.F(",")
-		}
-		c.F("%v", c.rvalue(t))
-	}
-	c.F("\n")
+	c.F("%v = %v\n", c.formatLvalueList(types), c.formatRvalueList(types))
 	return true
 }
 
@@ -193,7 +180,9 @@ func (c *Context) stmtCall() bool {
 	if c.rand(2) == 0 {
 		return c.stmtCallBuiltin()
 	}
-	return false
+	t := c.aType(TraitFunction)
+	c.F("%v(%v)\n", c.rvalue(t), c.formatRvalueList(t.atyp))
+	return true
 }
 
 func (c *Context) stmtCallBuiltin() bool {
@@ -211,14 +200,7 @@ func (c *Context) stmtCallBuiltin() bool {
 		fallthrough
 	case "println":
 		list := c.aTypeList(TraitPrintable)
-		c.F("%v(", fn)
-		for i, t := range list {
-			if i != 0 {
-				c.F(",")
-			}
-			c.F("%v", c.rvalue(t))
-		}
-		c.F(")\n")
+		c.F("%v(%v)\n", fn, c.formatRvalueList(list))
 		return false
 	case "recover":
 		return false

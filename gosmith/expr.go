@@ -58,7 +58,7 @@ func (c *Context) exprLiteral(res *Type) bool {
 
 func (c *Context) exprRecv(res *Type) bool {
 	t := c.chanOf(res)
-	c.F("<-%v", c.rvalue(t))
+	c.F("(<-%v)", c.rvalue(t))
 	return true
 }
 
