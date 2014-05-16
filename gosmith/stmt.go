@@ -6,7 +6,7 @@ import (
 )
 
 func (c *Context) statement() {
-	if c.stmtCount >= 20 {
+	if c.stmtCount >= 30 {
 		return
 	}
 	c.stmtCount++
@@ -26,6 +26,9 @@ func (c *Context) collectStatements() {
 		c.stmtInc,
 		c.stmtIf,
 		c.stmtFor,
+		c.stmtSend,
+		c.stmtRecv,
+		c.stmtSelect,
 		c.stmtTypeDecl,
 	}
 }
@@ -41,7 +44,9 @@ func (c *Context) stmtOas() bool {
 	}
 	c.expression(typ)
 	c.F("\n")
-	c.vars = append(c.vars, &Var{id: id, typ: typ})
+  if id != "_" {
+    c.vars = append(c.vars, &Var{id: id, typ: typ})
+  }
 	return true
 }
 
@@ -91,10 +96,86 @@ func (c *Context) stmtFor() bool {
 	return true
 }
 
+func (c *Context) stmtSend() bool {
+	v, ok := c.existingVarClass(ClassChan)
+	if !ok {
+		return false
+	}
+	c.F("%v <- ", v.id)
+	c.expression(v.typ.ktyp)
+	c.F("\n")
+	return true
+}
+
+func (c *Context) stmtRecv() bool {
+	cv, ok := c.existingVarClass(ClassChan)
+	if !ok {
+		return false
+	}
+	vv, ok := c.existingVarType(cv.typ.ktyp)
+	if ok {
+		c.F("%v ", vv.id)
+	} else {
+		c.F("_")
+	}
+	if rand.Intn(2) == 0 {
+		bv, ok := c.existingVarType(c.boolType)
+		if ok {
+			c.F(", %v ", bv.id)
+		} else {
+			c.F(", _")
+		}
+	}
+	c.F(" = <-%v\n", cv.id)
+	return true
+}
+
+func (c *Context) stmtSelect() bool {
+	c.F("select {\n")
+	for rand.Intn(5) != 0 {
+		if rand.Intn(2) == 0 {
+			cv, ok := c.existingVarClass(ClassChan)
+			if ok {
+				c.F("case %v <- ", cv.id)
+				c.expression(cv.typ.ktyp)
+				c.F(":\n")
+				c.block()
+			}
+		} else {
+			cv, ok := c.existingVarClass(ClassChan)
+			if ok {
+				c.F("case ")
+				vv, ok := c.existingVarType(cv.typ.ktyp)
+				if ok {
+					c.F("%v ", vv.id)
+				} else {
+					c.F("_")
+				}
+				if rand.Intn(2) == 0 {
+					bv, ok := c.existingVarType(c.boolType)
+					if ok {
+						c.F(", %v ", bv.id)
+					} else {
+						c.F(", _")
+					}
+				}
+				c.F(" = <-%v:\n", cv.id)
+				c.block()
+			}
+		}
+	}
+	if rand.Intn(2) == 0 {
+		c.F("default:\n")
+		c.block()
+	}
+	c.F("}\n")
+	return true
+}
+
 func (c *Context) stmtTypeDecl() bool {
 	id := c.newId()
 	c.F("type %v ", id)
-	switch rand.Intn(2) {
+	switch rand.Intn(3) {
 	case 0: // alias
 		typ := c.existingType()
 		newTyp := new(Type)
@@ -103,15 +184,39 @@ func (c *Context) stmtTypeDecl() bool {
 		newTyp.literal = func() string {
 			return fmt.Sprintf("%v(%v)", id, typ.literal())
 		}
-		c.types = append(c.types, newTyp)
+    if id != "_" {
+      c.types = append(c.types, newTyp)
+    }
 		c.F("%v", typ.id)
 	case 1: // map
 		ktyp, _ := c.existingTypeClass(ClassNumeric)
 		vtyp := c.existingType()
-		typ := &Type{id: Id(fmt.Sprintf("map[%v]%v", ktyp.id, vtyp.id)), class: ClassMap, literal: func() string {
-			return fmt.Sprintf("map[%v]%v{}", ktyp.id, vtyp.id)
-		}}
+		typ := &Type{
+			id:    Id(fmt.Sprintf("map[%v]%v", ktyp.id, vtyp.id)),
+			class: ClassMap,
+			ktyp:  ktyp,
+			vtyp:  vtyp,
+			literal: func() string {
+				return fmt.Sprintf("map[%v]%v{}", ktyp.id, vtyp.id)
+			},
+		}
+    if id != "_" {
 		c.types = append(c.types, typ)
+    }
+		c.F("%v", typ.id)
+	case 2: // chan
+		ktyp := c.existingType()
+		typ := &Type{
+			id:    Id(fmt.Sprintf("chan %v", ktyp.id)),
+			class: ClassChan,
+			ktyp:  ktyp,
+			literal: func() string {
+				return fmt.Sprintf("make(chan %v)", ktyp.id)
+			},
+		}
+    if id != "_" {
+		c.types = append(c.types, typ)
+    }
 		c.F("%v", typ.id)
 	}
 	c.F("\n")

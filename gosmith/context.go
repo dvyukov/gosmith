@@ -8,32 +8,10 @@ import (
 
 type Id string
 
-type TypeClass int
-
-const (
-	ClassBoolean TypeClass = iota
-	ClassNumeric
-	ClassString
-	ClassArray
-	ClassSlice
-	ClassStruct
-	ClassPointer
-	ClassFunction
-	ClassInterface
-	ClassMap
-	ClassChan
-)
-
 type Var struct {
 	id   Id
 	typ  *Type
 	used bool
-}
-
-type Type struct {
-	id      Id
-	literal func() string
-	class   TypeClass
 }
 
 type Context struct {
@@ -43,6 +21,7 @@ type Context struct {
 	idSeq          int
 	exprDepth      int
 	stmtCount      int
+  retType        *Type
 	boolType       *Type
 
 	statements  []func() bool
@@ -56,11 +35,7 @@ type Context struct {
 
 func NewContext(w io.Writer, incorrect, nonterminating bool) *Context {
 	c := &Context{w: w, incorrect: incorrect, nonterminating: nonterminating}
-	c.types = append(c.types, &Type{id: "bool", class: ClassBoolean, literal: func() string { return "false" }})
-	c.types = append(c.types, &Type{id: "int", class: ClassNumeric, literal: func() string { return "1" }})
-	c.types = append(c.types, &Type{id: "int16", class: ClassNumeric, literal: func() string { return "int16(1)" }})
-	c.types = append(c.types, &Type{id: "float64", class: ClassNumeric, literal: func() string { return "1.1" }})
-	c.types = append(c.types, &Type{id: "string", class: ClassString, literal: func() string { return "\"foo\"" }})
+	c.types = builtinTypes()
 	c.boolType = c.types[0]
 	c.collectStatements()
 	c.collectExpressions()
@@ -76,14 +51,20 @@ func (c *Context) program() {
 	for rand.Intn(5) != 0 {
 		c.stmtTypeDecl()
 	}
-	c.function("main")
+	c.function("main", nil)
+	c.function("foo", c.existingType())
 }
 
-func (c *Context) function(name Id) {
+func (c *Context) function(name Id, ret *Type) {
+  c.retType = nil
 	c.stmtCount = 0
-	c.F("func %v() {\n", name)
+	c.F("func %v() ", name)
+
+
+  
+  c.F("{\n")
 	c.block()
-	c.F("}\n")
+	c.F("}\n\n")
 }
 
 func (c *Context) block() {
@@ -117,6 +98,9 @@ func (c *Context) LeaveScope() {
 }
 
 func (c *Context) newId() Id {
+  if rand.Intn(3) == 0 {
+    return "_"
+  }
 	c.idSeq++
 	return Id(fmt.Sprintf("id%v", c.idSeq))
 }
