@@ -5,9 +5,9 @@ Usage instructions:
 hg sync
 hg clpatch 93420045
 export ASAN_OPTIONS="detect_leaks=0"
-CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common" ./make.bash
-CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common" GOARCH=386 go tool dist bootstrap
-CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common" GOARCH=arm go tool dist bootstrap
+CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" ./make.bash
+CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=386 go tool dist bootstrap
+CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=arm go tool dist bootstrap
 go install -race -a std
 go install -a std
 go get -u code.google.com/p/gosmith/gosmith
@@ -41,9 +41,14 @@ var (
 	statKnown   uint64
 
 	knownBuildBugs = []*regexp.Regexp{
+		// gc
 		regexp.MustCompile("internal compiler error: out of fixed registers"),
 		regexp.MustCompile("constant [0-9]* overflows"),
-		regexp.MustCompile("cannot use _ as value"),
+		//regexp.MustCompile("cannot use _ as value"),
+		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
+
+		// gccgo
+		regexp.MustCompile("internal compiler error: in fold_convert_loc"),
 	}
 
 	knownSsadumpBugs = []*regexp.Regexp{
@@ -70,7 +75,6 @@ func main() {
 		}()
 	}
 	for {
-		time.Sleep(10 * time.Second)
 		total := atomic.LoadUint64(&statTotal)
 		build := atomic.LoadUint64(&statBuild)
 		known := atomic.LoadUint64(&statKnown)
@@ -78,6 +82,7 @@ func main() {
 		gofmt := atomic.LoadUint64(&statGofmt)
 		log.Printf("%v tests, %v known, %v build, %v ssadump, %v gofmt",
 			total, known, build, ssadump, gofmt)
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -102,19 +107,23 @@ func (t *Test) Do() {
 	if !t.generateSource() {
 		return
 	}
-	if t.Build("amd64", false) {
+	if t.Build("gc", "amd64", false) {
 		t.keep = true
 		return
 	}
-	if t.Build("386", false) {
+	if t.Build("gc", "386", false) {
 		t.keep = true
 		return
 	}
-	if t.Build("arm", false) {
+	if t.Build("gc", "arm", false) {
 		t.keep = true
 		return
 	}
-	if t.Build("amd64", true) {
+	if t.Build("gc", "amd64", true) {
+		t.keep = true
+		return
+	}
+	if t.Build("gccgo", "amd64", false) {
 		t.keep = true
 		return
 	}
@@ -144,8 +153,8 @@ func (t *Test) generateSource() bool {
 	return true
 }
 
-func (t *Test) Build(goarch string, race bool) bool {
-	args := []string{"build", "-o", t.src + "." + goarch}
+func (t *Test) Build(compiler, goarch string, race bool) bool {
+	args := []string{"build", "-o", t.src + "." + goarch, "-compiler", compiler}
 	if race {
 		args = append(args, "-race")
 	}
@@ -162,12 +171,11 @@ func (t *Test) Build(goarch string, race bool) bool {
 			return false
 		}
 	}
-	outname := t.src + ".build"
+	typ := compiler + "." + goarch
 	if race {
-		outname += ".race"
-	} else {
-		outname += "." + goarch
+		typ += ".race"
 	}
+	outname := t.src + ".build." + typ
 	outf, err := os.Create(outname)
 	if err != nil {
 		log.Printf("failed to create output file: %v", err)
@@ -175,7 +183,7 @@ func (t *Test) Build(goarch string, race bool) bool {
 		outf.Write(out)
 		outf.Close()
 	}
-	log.Printf("build failed, seed %v\n", t.seed)
+	log.Printf("%v build failed, seed %v\n", typ, t.seed)
 	atomic.AddUint64(&statBuild, 1)
 	return true
 }

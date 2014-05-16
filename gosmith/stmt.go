@@ -19,7 +19,7 @@ func (c *Context) statement() {
 	}
 }
 
-func (c *Context) collectStatements() {
+func (c *Context) initStatements() {
 	c.statements = []func() bool{
 		c.stmtOas,
 		c.stmtAs,
@@ -30,6 +30,8 @@ func (c *Context) collectStatements() {
 		c.stmtRecv,
 		c.stmtSelect,
 		c.stmtTypeDecl,
+		c.stmtCall,
+		c.stmtReturn,
 	}
 }
 
@@ -54,19 +56,19 @@ func (c *Context) stmtOas() bool {
 }
 
 func (c *Context) stmtAs() bool {
-	types := c.aTypeList()
+	types := c.aTypeList(TraitAny)
 	for i, t := range types {
 		if i != 0 {
 			c.F(",")
 		}
-		c.F("%v", c.rvalue(t))
+		c.F("%v", c.lvalue(t))
 	}
 	c.F(" = ")
 	for i, t := range types {
 		if i != 0 {
 			c.F(",")
 		}
-		c.F("%v", c.lvalue(t))
+		c.F("%v", c.rvalue(t))
 	}
 	c.F("\n")
 	return true
@@ -120,11 +122,11 @@ func (c *Context) stmtSend() bool {
 
 func (c *Context) stmtRecv() bool {
 	t := c.aType(TraitReceivable)
-	c.F("%v", c.rvalue(t.ktyp))
+	c.F("%v", c.lvalue(t.ktyp))
 	if c.rand(2) == 0 {
-		c.F(", %v", c.rvalue(t.ktyp))
+		c.F(", %v", c.lvalue(c.boolType))
 	}
-	c.F(" = <-%v\n", c.lvalue(t))
+	c.F(" = <-%v\n", c.rvalue(t))
 	return true
 }
 
@@ -172,50 +174,66 @@ func (c *Context) stmtSelect() bool {
 
 func (c *Context) stmtTypeDecl() bool {
 	id := c.newId()
-	c.F("type %v ", id)
-	switch rand.Intn(3) {
-	case 0: // alias
-		typ := c.existingType()
-		newTyp := new(Type)
-		*newTyp = *typ
-		newTyp.id = id
-		newTyp.literal = func() string {
-			return fmt.Sprintf("%v(%v)", id, typ.literal())
+	t := c.aType(TraitAny)
+	c.F("type %v %v\n", id, t.id)
+
+	newTyp := new(Type)
+	*newTyp = *t
+	newTyp.id = id
+	newTyp.literal = func() string {
+		return fmt.Sprintf("%v(%v)", id, t.literal())
+	}
+	if id != "_" {
+		c.types = append(c.types, newTyp)
+	}
+	return true
+}
+
+func (c *Context) stmtCall() bool {
+	if c.rand(2) == 0 {
+		return c.stmtCallBuiltin()
+	}
+	return false
+}
+
+func (c *Context) stmtCallBuiltin() bool {
+	builtins := []string{"close", "copy", "delete", "panic", "print", "println", "recover"}
+	switch fn := builtins[c.rand(len(builtins))]; fn {
+	case "close":
+		return false
+	case "copy":
+		return false
+	case "delete":
+		return false
+	case "panic":
+		return false
+	case "print":
+		fallthrough
+	case "println":
+		list := c.aTypeList(TraitPrintable)
+		c.F("%v(", fn)
+		for i, t := range list {
+			if i != 0 {
+				c.F(",")
+			}
+			c.F("%v", c.rvalue(t))
 		}
-		if id != "_" {
-			c.types = append(c.types, newTyp)
+		c.F(")\n")
+		return false
+	case "recover":
+		return false
+	default:
+		panic("bad")
+	}
+}
+
+func (c *Context) stmtReturn() bool {
+	c.F("return ")
+	for i, t := range c.retType {
+		if i != 0 {
+			c.F(",")
 		}
-		c.F("%v", typ.id)
-	case 1: // map
-		ktyp, _ := c.existingTypeClass(ClassNumeric)
-		vtyp := c.existingType()
-		typ := &Type{
-			id:    Id(fmt.Sprintf("map[%v]%v", ktyp.id, vtyp.id)),
-			class: ClassMap,
-			ktyp:  ktyp,
-			vtyp:  vtyp,
-			literal: func() string {
-				return fmt.Sprintf("map[%v]%v{}", ktyp.id, vtyp.id)
-			},
-		}
-		if id != "_" {
-			c.types = append(c.types, typ)
-		}
-		c.F("%v", typ.id)
-	case 2: // chan
-		ktyp := c.existingType()
-		typ := &Type{
-			id:    Id(fmt.Sprintf("chan %v", ktyp.id)),
-			class: ClassChan,
-			ktyp:  ktyp,
-			literal: func() string {
-				return fmt.Sprintf("make(chan %v)", ktyp.id)
-			},
-		}
-		if id != "_" {
-			c.types = append(c.types, typ)
-		}
-		c.F("%v", typ.id)
+		c.F("%v", c.rvalue(t))
 	}
 	c.F("\n")
 	return true

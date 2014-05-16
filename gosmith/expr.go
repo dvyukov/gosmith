@@ -21,25 +21,20 @@ func (c *Context) expression(res *Type) {
 	c.exprDepth--
 }
 
-func (c *Context) collectExpressions() {
+func (c *Context) initExpressions() {
 	c.expressions = []func(res *Type) bool{
 		c.exprLiteral,
+		c.exprRecv,
 		c.exprVar,
 		c.exprArith,
 		c.exprEqual,
 		c.exprOrder,
+		c.exprCall,
+		c.exprIndex,
 	}
 }
 
 func (c *Context) rvalue(t *Type) string {
-	v, ok := c.existingVarType(t)
-	if !ok {
-		return "_"
-	}
-	return string(v.id)
-}
-
-func (c *Context) lvalue(t *Type) string {
 	var buf bytes.Buffer
 	w := c.w
 	c.w = &buf
@@ -48,8 +43,22 @@ func (c *Context) lvalue(t *Type) string {
 	return buf.String()
 }
 
+func (c *Context) lvalue(t *Type) string {
+	v, ok := c.existingVarType(t)
+	if !ok {
+		return "_"
+	}
+	return string(v.id)
+}
+
 func (c *Context) exprLiteral(res *Type) bool {
 	c.F("%v", res.literal())
+	return true
+}
+
+func (c *Context) exprRecv(res *Type) bool {
+	t := c.chanOf(res)
+	c.F("<-%v", c.rvalue(t))
 	return true
 }
 
@@ -125,4 +134,69 @@ func (c *Context) exprOrder(res *Type) bool {
 	c.expression(typ)
 	c.F("))")
 	return true
+}
+
+func (c *Context) exprCall(ret *Type) bool {
+	if c.rand(2) == 0 {
+		return c.exprCallBuiltin(ret)
+	}
+	return false
+}
+
+func (c *Context) exprCallBuiltin(ret *Type) bool {
+	builtins := []string{"append", "cap", "complex", "copy",
+		"imag", "len", "make", "new", "real", "recover"}
+	switch fn := builtins[c.rand(len(builtins))]; fn {
+	case "append":
+		return false
+	case "cap":
+		fallthrough
+	case "len":
+		if ret != c.intType { // TODO: must be convertable
+			return false
+		}
+		t := c.aType(TraitLenCapable)
+		if (t.class == ClassString || t.class == ClassMap) && fn == "cap" {
+			return false
+
+		}
+		c.F("%v(%v)", fn, c.rvalue(t))
+		return true
+	case "complex":
+		return false
+	case "copy":
+		return false
+	case "imag":
+		return false
+	case "make":
+		return false
+	case "new":
+		return false
+	case "real":
+		return false
+	case "recover":
+		return false
+	default:
+		panic("bad")
+	}
+}
+
+func (c *Context) exprIndex(ret *Type) bool {
+	options := []string{"array", "slice", "ptr to array", "string", "map"}
+	switch what := options[c.rand(len(options))]; what {
+	case "array":
+		return false
+	case "slice":
+		t := c.sliceOf(ret)
+		c.F("(%v)[%v]", c.rvalue(t), c.rvalue(c.intType))
+		return true
+	case "ptr to array":
+		return false
+	case "string":
+		return false
+	case "map":
+		return false
+	default:
+		panic("bad")
+	}
 }

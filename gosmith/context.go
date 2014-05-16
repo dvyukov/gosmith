@@ -19,10 +19,12 @@ type Context struct {
 	incorrect      bool
 	nonterminating bool
 	idSeq          int
+	typeDepth      int
 	exprDepth      int
 	stmtCount      int
-	retType        *Type
+	retType        []*Type
 	boolType       *Type
+	intType        *Type
 
 	statements  []func() bool
 	expressions []func(res *Type) bool
@@ -36,8 +38,8 @@ type Context struct {
 func NewContext(w io.Writer, incorrect, nonterminating bool) *Context {
 	c := &Context{w: w, incorrect: incorrect, nonterminating: nonterminating}
 	c.initTypes()
-	c.collectStatements()
-	c.collectExpressions()
+	c.initExpressions()
+	c.initStatements()
 	return c
 }
 
@@ -51,20 +53,28 @@ func (c *Context) rand(n int) int {
 
 func (c *Context) program() {
 	c.F("package main\n")
+	c.F("import \"unsafe\"\n")
+	c.F("type uptr unsafe.Pointer\n")
 	for rand.Intn(5) != 0 {
 		c.stmtTypeDecl()
 	}
 	c.function("main", nil)
-	c.function("foo", c.existingType())
+	c.function("foo", []*Type{c.aType(TraitAny)})
 }
 
-func (c *Context) function(name Id, ret *Type) {
-	c.retType = nil
+func (c *Context) function(name Id, ret []*Type) {
+	c.retType = ret
 	c.stmtCount = 0
-	c.F("func %v() ", name)
-
-	c.F("{\n")
+	c.F("func %v() (", name)
+	for i, t := range ret {
+		if i != 0 {
+			c.F(",")
+		}
+		c.F("%v", t.id)
+	}
+	c.F(") {\n")
 	c.block()
+	c.stmtReturn()
 	c.F("}\n\n")
 }
 

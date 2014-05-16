@@ -29,6 +29,9 @@ const (
 	TraitComparable
 	TraitIndexable
 	TraitReceivable
+	TraitHashable
+	TraitPrintable
+	TraitLenCapable
 )
 
 type Type struct {
@@ -56,11 +59,16 @@ func (c *Context) initTypes() {
 		t.utyp = t
 	}
 	c.boolType = c.types[0]
+	c.intType = c.types[1]
 }
 
 func (c *Context) aType(trait TypeTrait) *Type {
+	c.typeDepth++
+	defer func() {
+		c.typeDepth--
+	}()
 	for {
-		if c.rand(3) == 0 {
+		if c.typeDepth >= 3 || c.rand(2) == 0 {
 			var cand []*Type
 			for _, t := range c.types {
 				if satisfiesTrait(t, trait) {
@@ -71,46 +79,43 @@ func (c *Context) aType(trait TypeTrait) *Type {
 				return cand[c.rand(len(cand))]
 			}
 		}
-		t := c.typeLit(trait)
-		if t != nil {
+		t := c.typeLit()
+		if t != nil && satisfiesTrait(t, trait) {
 			return t
 		}
 	}
 }
 
-func (c *Context) aTypeList() []*Type {
+func (c *Context) aTypeList(trait TypeTrait) []*Type {
 	n := c.rand(4) + 1
 	list := make([]*Type, n)
 	for i := 0; i < n; i++ {
-		list[i] = c.aType(TraitAny)
+		list[i] = c.aType(trait)
 	}
 	return list
 }
 
-func (c *Context) typeLit(trait TypeTrait) *Type {
+func (c *Context) typeLit() *Type {
 	switch c.rand(8) {
 	case 0: // ArrayType
-		if trait != TraitAny && trait != TraitIndexable && trait != TraitComparable {
-			return nil
-		}
-		elemTrait := TraitAny
-		if trait == TraitComparable {
-			elemTrait = TraitComparable
-		}
-		elem := c.aType(elemTrait)
-		size := c.rand(10)
-		return &Type{id: Id(fmt.Sprintf("[%v]%v", size, elem.id)), class: ClassArray, ktyp: elem, literal: func() string {
-			var buf bytes.Buffer
-			fmt.Fprintf(&buf, "[%v]%v{", size, elem.id)
-			for i := 0; i < size; i++ {
-				if i != 0 {
-					fmt.Fprintf(&buf, ",")
+		elem := c.aType(TraitAny)
+		size := c.rand(3)
+		return &Type{
+			id:    Id(fmt.Sprintf("[%v]%v", size, elem.id)),
+			class: ClassArray,
+			ktyp:  elem,
+			literal: func() string {
+				var buf bytes.Buffer
+				fmt.Fprintf(&buf, "[%v]%v{", size, elem.id)
+				for i := 0; i < size; i++ {
+					if i != 0 {
+						fmt.Fprintf(&buf, ",")
+					}
+					fmt.Fprintf(&buf, "%v", c.rvalue(elem))
 				}
-				fmt.Fprintf(&buf, "%v", c.lvalue(elem))
-			}
-			fmt.Fprintf(&buf, "}")
-			return buf.String()
-		}}
+				fmt.Fprintf(&buf, "}")
+				return buf.String()
+			}}
 	case 1: // StructType
 		return nil
 	case 2: // PointerType
@@ -120,14 +125,59 @@ func (c *Context) typeLit(trait TypeTrait) *Type {
 	case 4: // InterfaceType
 		return nil
 	case 5: // SliceType
-		return nil
+		elem := c.aType(TraitAny)
+		return c.sliceOf(elem);
 	case 6: // MapType
-		return nil
+		ktyp := c.aType(TraitHashable)
+		vtyp := c.aType(TraitAny)
+		return &Type{
+			id:    Id(fmt.Sprintf("map[%v]%v", ktyp.id, vtyp.id)),
+			class: ClassMap,
+			ktyp:  ktyp,
+			vtyp:  vtyp,
+			literal: func() string {
+				if c.rand(2) == 0 {
+					cap := ""
+					if c.rand(2) == 0 {
+						cap = "," + c.rvalue(c.intType)
+					}
+					return fmt.Sprintf("make(map[%v]%v %v)", ktyp.id, vtyp.id, cap)
+				} else {
+					return fmt.Sprintf("map[%v]%v{}", ktyp.id, vtyp.id)
+				}
+			},
+		}
 	case 7: // ChannelType
-		return nil
+		elem := c.aType(TraitAny)
+		return c.chanOf(elem)
 	default:
 		panic("bad")
 	}
+}
+
+func (c *Context) chanOf(elem *Type) *Type {
+	return &Type{
+		id:    Id(fmt.Sprintf("chan %v", elem.id)),
+		class: ClassChan,
+		ktyp:  elem,
+		literal: func() string {
+			cap := ""
+			if c.rand(2) == 0 {
+				cap = "," + c.rvalue(c.intType)
+			}
+			return fmt.Sprintf("make(chan %v %v)", elem.id, cap)
+		},
+	}
+}
+
+func (c *Context) sliceOf(elem *Type) *Type {
+	return &Type{
+		id:    Id(fmt.Sprintf("[]%v", elem.id)),
+		class: ClassSlice,
+		ktyp:  elem,
+		literal: func() string {
+			return fmt.Sprintf("[]%v{}", elem.id)
+		}}
 }
 
 func satisfiesTrait(t *Type, trait TypeTrait) bool {
@@ -144,6 +194,15 @@ func satisfiesTrait(t *Type, trait TypeTrait) bool {
 			t.class == ClassMap
 	case TraitReceivable:
 		return t.class == ClassChan
+	case TraitHashable:
+		return t.class != ClassFunction && t.class != ClassMap && t.class != ClassSlice &&
+			(t.class != ClassArray || satisfiesTrait(t.ktyp, TraitHashable))
+	case TraitPrintable:
+		return t.class == ClassBoolean || t.class == ClassNumeric || t.class == ClassString ||
+			t.class == ClassPointer || t.class == ClassInterface
+	case TraitLenCapable:
+		return t.class == ClassString || t.class == ClassSlice || t.class == ClassArray ||
+			t.class == ClassMap || t.class == ClassChan
 	default:
 		panic("bad")
 	}
