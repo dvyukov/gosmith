@@ -1,6 +1,22 @@
 package main
 
+/*
+Usage instructions:
+hg sync
+hg clpatch 93420045
+export ASAN_OPTIONS="detect_leaks=0"
+CC=clang CFLAGS="-fsanitize=address" ./make.bash
+CC=clang CFLAGS="-fsanitize=address" GOARCH=386 go tool dist bootstrap
+CC=clang CFLAGS="-fsanitize=address" GOARCH=arm go tool dist bootstrap
+go install -race -a std
+go install -a std
+go get -u code.google.com/p/gosmith/gosmith
+go get -u code.google.com/p/go.tools/cmd/ssadump
+go run driver.go
+*/
+
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"log"
@@ -18,17 +34,16 @@ var (
 	parallelism = flag.Int("p", runtime.NumCPU(), "number of parallel tests")
 	workDir     = flag.String("workdir", "./work", "working directory for temp files")
 
-	gosmithBin string
-	ssadumpBin string
-
 	statTotal   uint64
 	statBuild   uint64
 	statSsadump uint64
+	statGofmt   uint64
 	statKnown   uint64
 
 	knownBuildBugs = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: out of fixed registers"),
 		regexp.MustCompile("constant [0-9]* overflows"),
+		regexp.MustCompile("cannot use _ as value"),
 	}
 
 	knownSsadumpBugs = []*regexp.Regexp{
@@ -38,9 +53,8 @@ var (
 
 func main() {
 	flag.Parse()
-	gosmithBin = buildBinary("code.google.com/p/gosmith/gosmith", "gosmith")
-	ssadumpBin = buildBinary("code.google.com/p/go.tools/cmd/ssadump", "ssadump")
 	log.Printf("testing with %v workers", *parallelism)
+	os.Setenv("ASAN_OPTIONS", "detect_leaks=0")
 	os.MkdirAll(filepath.Join(*workDir, "tmp"), os.ModePerm)
 	os.MkdirAll(filepath.Join(*workDir, "bug"), os.ModePerm)
 	rand.Seed(time.Now().UnixNano())
@@ -49,7 +63,8 @@ func main() {
 		go func() {
 			for {
 				s := atomic.AddInt64(&seed, 1)
-				test(fmt.Sprintf("%v", s))
+				t := &Test{seed: fmt.Sprintf("%v", s)}
+				t.Do()
 				atomic.AddUint64(&statTotal, 1)
 			}
 		}()
@@ -60,56 +75,59 @@ func main() {
 		build := atomic.LoadUint64(&statBuild)
 		known := atomic.LoadUint64(&statKnown)
 		ssadump := atomic.LoadUint64(&statSsadump)
-		log.Printf("%v tests, %v known bugs, %v build failures, %v ssadump failures",
-			total, known, build, ssadump)
+		gofmt := atomic.LoadUint64(&statGofmt)
+		log.Printf("%v tests, %v known, %v build, %v ssadump, %v gofmt",
+			total, known, build, ssadump, gofmt)
 	}
 }
 
-func buildBinary(pkg, prog string) string {
-	bin := filepath.Join(*workDir, prog)
-	out, err := exec.Command("go", "build", "-o", bin, pkg).CombinedOutput()
-	if err != nil {
-		log.Fatalf("failed to build %v: %v\n%v\n", pkg, err, string(out))
-	}
-	return bin
+type Test struct {
+	seed   string
+	path   string
+	src    string
+	keep   bool
+	srcbuf []byte
 }
 
-func test(seed string) {
-	path := filepath.Join(*workDir, "tmp", seed)
-	src := filepath.Join(path, "src.go")
-	os.Mkdir(path, os.ModePerm)
-	keep := false
+func (t *Test) Do() {
+	t.path = filepath.Join(*workDir, "tmp", t.seed)
+	os.Mkdir(t.path, os.ModePerm)
 	defer func() {
-		if keep {
-			os.Rename(path, filepath.Join(*workDir, "bug", seed))
+		if t.keep {
+			os.Rename(t.path, filepath.Join(*workDir, "bug", t.seed))
 		} else {
-			os.RemoveAll(path)
+			os.RemoveAll(t.path)
 		}
 	}()
-	ok := generateSource(src, seed)
-	if !ok {
+	if !t.generateSource() {
 		return
 	}
-	if testBuild(src, seed, false) {
-		keep = true
+	if t.Build("amd64", false) {
+		t.keep = true
 		return
 	}
-	if testBuild(src, seed, true) {
-		keep = true
+	if t.Build("386", false) {
+		t.keep = true
 		return
 	}
-	if testSsadump(src, seed) {
-		keep = true
+	if t.Build("arm", false) {
+		t.keep = true
+		return
+	}
+	if t.Build("amd64", true) {
+		t.keep = true
+		return
+	}
+	if t.Ssadump() {
+		t.keep = true
 		return
 	}
 	//- gofmt idempotentness (gofmt several times and compare results)
-	//- ast/types/ssa robustness and idempotentness (generate, serialize, parse, serialize, parse, compare).
-	//- govet robustness
-	//- compare gc, gccgo, ssa/interp output
 }
 
-func generateSource(src, seed string) bool {
-	srcf, err := os.Create(src)
+func (t *Test) generateSource() bool {
+	t.src = filepath.Join(t.path, "src.go")
+	srcf, err := os.Create(t.src)
 	defer func() {
 		srcf.Close()
 	}()
@@ -117,22 +135,24 @@ func generateSource(src, seed string) bool {
 		log.Printf("failed to create source file: %v", err)
 		return false
 	}
-	out, err := exec.Command(gosmithBin, "-seed", seed).CombinedOutput()
+	t.srcbuf, err = exec.Command("gosmith", "-seed", t.seed).CombinedOutput()
 	if err != nil {
-		log.Printf("failed to execute gosmith for seed %v: %v\n%v\n", seed, err, string(out))
+		log.Printf("failed to execute gosmith for seed %v: %v\n%v\n", t.seed, err, string(t.srcbuf))
 		return false
 	}
-	srcf.Write(out)
+	srcf.Write(t.srcbuf)
 	return true
 }
 
-func testBuild(src string, seed string, race bool) bool {
-	args := []string{"build", "-o", src + ".bin"}
+func (t *Test) Build(goarch string, race bool) bool {
+	args := []string{"build", "-o", t.src + "." + goarch}
 	if race {
 		args = append(args, "-race")
 	}
-	args = append(args, src)
-	out, err := exec.Command("go", args...).CombinedOutput()
+	args = append(args, t.src)
+	cmd := exec.Command("go", args...)
+	cmd.Env = append(os.Environ(), "GOARCH="+goarch)
+	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return false
 	}
@@ -142,9 +162,11 @@ func testBuild(src string, seed string, race bool) bool {
 			return false
 		}
 	}
-	outname := src + ".build"
+	outname := t.src + ".build"
 	if race {
 		outname += ".race"
+	} else {
+		outname += "." + goarch
 	}
 	outf, err := os.Create(outname)
 	if err != nil {
@@ -153,13 +175,13 @@ func testBuild(src string, seed string, race bool) bool {
 		outf.Write(out)
 		outf.Close()
 	}
-	log.Printf("build failed, seed %v\n", seed)
+	log.Printf("build failed, seed %v\n", t.seed)
 	atomic.AddUint64(&statBuild, 1)
 	return true
 }
 
-func testSsadump(src string, seed string) bool {
-	out, err := exec.Command(ssadumpBin, "-build=CDPF", src).CombinedOutput()
+func (t *Test) Ssadump() bool {
+	out, err := exec.Command("ssadump", "-build=CDPF", t.src).CombinedOutput()
 	if err == nil {
 		return false
 	}
@@ -169,14 +191,81 @@ func testSsadump(src string, seed string) bool {
 			return false
 		}
 	}
-	outf, err := os.Create(src + ".ssadump")
+	outf, err := os.Create(t.src + ".ssadump")
 	if err != nil {
 		log.Printf("failed to create output file: %v", err)
 	} else {
 		outf.Write(out)
 		outf.Close()
 	}
-	log.Printf("ssadump failed, seed %v\n", seed)
+	log.Printf("ssadump failed, seed %v\n", t.seed)
 	atomic.AddUint64(&statSsadump, 1)
 	return true
+}
+
+func (t *Test) Gofmt() bool {
+	formatted, err := exec.Command("gofmt", t.src).CombinedOutput()
+	if err != nil {
+		outf, err := os.Create(t.src + ".gofmt")
+		if err != nil {
+			log.Printf("failed to create output file: %v", err)
+		} else {
+			outf.Write(formatted)
+			outf.Close()
+		}
+		log.Printf("gofmt failed, seed %v\n", t.seed)
+		atomic.AddUint64(&statGofmt, 1)
+		return true
+	}
+	fname := t.src + ".formatted"
+	outf, err := os.Create(fname)
+	if err != nil {
+		log.Printf("failed to create output file: %v", err)
+		return false
+	}
+	outf.Write(formatted)
+	outf.Close()
+
+	formatted2, err := exec.Command("gofmt", fname).CombinedOutput()
+	if err != nil {
+		outf, err := os.Create(t.src + ".gofmt")
+		if err != nil {
+			log.Printf("failed to create output file: %v", err)
+		} else {
+			outf.Write(formatted2)
+			outf.Close()
+		}
+		log.Printf("gofmt failed, seed %v\n", t.seed)
+		atomic.AddUint64(&statGofmt, 1)
+		return true
+	}
+	outf2, err := os.Create(t.src + ".formatted2")
+	if err != nil {
+		log.Printf("failed to create output file: %v", err)
+		return false
+	}
+	outf2.Write(formatted2)
+	outf2.Close()
+
+	if bytes.Compare(formatted, formatted2) != 0 {
+		log.Printf("nonidempotent gofmt, seed %v\n", t.seed)
+		atomic.AddUint64(&statGofmt, 1)
+		return true
+	}
+
+	removeWs := func(r rune) rune {
+		if r == ' ' || r == '\t' || r == '\n' {
+			return -1
+		}
+		return r
+	}
+	stripped := bytes.Map(removeWs, t.srcbuf)
+	stripped2 := bytes.Map(removeWs, formatted)
+	if bytes.Compare(stripped, stripped2) != 0 {
+		log.Printf("nonidempotent gofmt, seed %v\n", t.seed)
+		atomic.AddUint64(&statGofmt, 1)
+		return true
+	}
+
+	return false
 }

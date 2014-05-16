@@ -21,7 +21,7 @@ type Context struct {
 	idSeq          int
 	exprDepth      int
 	stmtCount      int
-  retType        *Type
+	retType        *Type
 	boolType       *Type
 
 	statements  []func() bool
@@ -56,13 +56,11 @@ func (c *Context) program() {
 }
 
 func (c *Context) function(name Id, ret *Type) {
-  c.retType = nil
+	c.retType = nil
 	c.stmtCount = 0
 	c.F("func %v() ", name)
 
-
-  
-  c.F("{\n")
+	c.F("{\n")
 	c.block()
 	c.F("}\n\n")
 }
@@ -98,9 +96,9 @@ func (c *Context) LeaveScope() {
 }
 
 func (c *Context) newId() Id {
-  if rand.Intn(3) == 0 {
-    return "_"
-  }
+	if rand.Intn(3) == 0 {
+		return "_"
+	}
 	c.idSeq++
 	return Id(fmt.Sprintf("id%v", c.idSeq))
 }

@@ -35,6 +35,9 @@ func (c *Context) collectStatements() {
 
 func (c *Context) stmtOas() bool {
 	id := c.newId()
+	if id == "_" {
+		return false
+	}
 	typ := c.existingType()
 	switch rand.Intn(2) {
 	case 0: // short form
@@ -44,9 +47,9 @@ func (c *Context) stmtOas() bool {
 	}
 	c.expression(typ)
 	c.F("\n")
-  if id != "_" {
-    c.vars = append(c.vars, &Var{id: id, typ: typ})
-  }
+	if id != "_" {
+		c.vars = append(c.vars, &Var{id: id, typ: typ})
+	}
 	return true
 }
 
@@ -184,9 +187,9 @@ func (c *Context) stmtTypeDecl() bool {
 		newTyp.literal = func() string {
 			return fmt.Sprintf("%v(%v)", id, typ.literal())
 		}
-    if id != "_" {
-      c.types = append(c.types, newTyp)
-    }
+		if id != "_" {
+			c.types = append(c.types, newTyp)
+		}
 		c.F("%v", typ.id)
 	case 1: // map
 		ktyp, _ := c.existingTypeClass(ClassNumeric)
@@ -200,9 +203,9 @@ func (c *Context) stmtTypeDecl() bool {
 				return fmt.Sprintf("map[%v]%v{}", ktyp.id, vtyp.id)
 			},
 		}
-    if id != "_" {
-		c.types = append(c.types, typ)
-    }
+		if id != "_" {
+			c.types = append(c.types, typ)
+		}
 		c.F("%v", typ.id)
 	case 2: // chan
 		ktyp := c.existingType()
@@ -214,9 +217,9 @@ func (c *Context) stmtTypeDecl() bool {
 				return fmt.Sprintf("make(chan %v)", ktyp.id)
 			},
 		}
-    if id != "_" {
-		c.types = append(c.types, typ)
-    }
+		if id != "_" {
+			c.types = append(c.types, typ)
+		}
 		c.F("%v", typ.id)
 	}
 	c.F("\n")

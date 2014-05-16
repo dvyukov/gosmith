@@ -25,11 +25,11 @@ type Type struct {
 }
 
 func builtinTypes() []*Type {
-  return []*Type{
-    &Type{id: "bool", class: ClassBoolean, literal: func() string { return "false" }},
-    &Type{id: "int", class: ClassNumeric, literal: func() string { return "1" }},
-    &Type{id: "int16", class: ClassNumeric, literal: func() string { return "int16(1)" }},
-    &Type{id: "float64", class: ClassNumeric, literal: func() string { return "1.1" }},
-    &Type{id: "string", class: ClassString, literal: func() string { return "\"foo\"" }},
-  }
+	return []*Type{
+		&Type{id: "bool", class: ClassBoolean, literal: func() string { return "false" }},
+		&Type{id: "int", class: ClassNumeric, literal: func() string { return "1" }},
+		&Type{id: "int16", class: ClassNumeric, literal: func() string { return "int16(1)" }},
+		&Type{id: "float64", class: ClassNumeric, literal: func() string { return "1.1" }},
+		&Type{id: "string", class: ClassString, literal: func() string { return "\"foo\"" }},
+	}
 }
