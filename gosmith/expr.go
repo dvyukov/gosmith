@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"math/rand"
 )
 
@@ -28,6 +29,23 @@ func (c *Context) collectExpressions() {
 		c.exprEqual,
 		c.exprOrder,
 	}
+}
+
+func (c *Context) rvalue(t *Type) string {
+	v, ok := c.existingVarType(t)
+	if !ok {
+		return "_"
+	}
+	return string(v.id)
+}
+
+func (c *Context) lvalue(t *Type) string {
+	var buf bytes.Buffer
+	w := c.w
+	c.w = &buf
+	c.expression(t)
+	c.w = w
+	return buf.String()
 }
 
 func (c *Context) exprLiteral(res *Type) bool {

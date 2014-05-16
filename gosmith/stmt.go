@@ -54,12 +54,20 @@ func (c *Context) stmtOas() bool {
 }
 
 func (c *Context) stmtAs() bool {
-	v, ok := c.existingVar()
-	if !ok {
-		return false
+	types := c.aTypeList()
+	for i, t := range types {
+		if i != 0 {
+			c.F(",")
+		}
+		c.F("%v", c.rvalue(t))
 	}
-	c.F("%v = ", v.id)
-	c.expression(v.typ)
+	c.F(" = ")
+	for i, t := range types {
+		if i != 0 {
+			c.F(",")
+		}
+		c.F("%v", c.lvalue(t))
+	}
 	c.F("\n")
 	return true
 }
@@ -111,25 +119,12 @@ func (c *Context) stmtSend() bool {
 }
 
 func (c *Context) stmtRecv() bool {
-	cv, ok := c.existingVarClass(ClassChan)
-	if !ok {
-		return false
+	t := c.aType(TraitReceivable)
+	c.F("%v", c.rvalue(t.ktyp))
+	if c.rand(2) == 0 {
+		c.F(", %v", c.rvalue(t.ktyp))
 	}
-	vv, ok := c.existingVarType(cv.typ.ktyp)
-	if ok {
-		c.F("%v ", vv.id)
-	} else {
-		c.F("_")
-	}
-	if rand.Intn(2) == 0 {
-		bv, ok := c.existingVarType(c.boolType)
-		if ok {
-			c.F(", %v ", bv.id)
-		} else {
-			c.F(", _")
-		}
-	}
-	c.F(" = <-%v\n", cv.id)
+	c.F(" = <-%v\n", c.lvalue(t))
 	return true
 }
 

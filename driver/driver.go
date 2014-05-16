@@ -5,9 +5,9 @@ Usage instructions:
 hg sync
 hg clpatch 93420045
 export ASAN_OPTIONS="detect_leaks=0"
-CC=clang CFLAGS="-fsanitize=address" ./make.bash
-CC=clang CFLAGS="-fsanitize=address" GOARCH=386 go tool dist bootstrap
-CC=clang CFLAGS="-fsanitize=address" GOARCH=arm go tool dist bootstrap
+CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common" ./make.bash
+CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common" GOARCH=386 go tool dist bootstrap
+CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common" GOARCH=arm go tool dist bootstrap
 go install -race -a std
 go install -a std
 go get -u code.google.com/p/gosmith/gosmith
@@ -54,7 +54,7 @@ var (
 func main() {
 	flag.Parse()
 	log.Printf("testing with %v workers", *parallelism)
-	os.Setenv("ASAN_OPTIONS", "detect_leaks=0")
+	os.Setenv("ASAN_OPTIONS", "detect_leaks=0 detect_odr_violation=2 detect_stack_use_after_return=1")
 	os.MkdirAll(filepath.Join(*workDir, "tmp"), os.ModePerm)
 	os.MkdirAll(filepath.Join(*workDir, "bug"), os.ModePerm)
 	rand.Seed(time.Now().UnixNano())
@@ -70,7 +70,7 @@ func main() {
 		}()
 	}
 	for {
-		time.Sleep(3 * time.Second)
+		time.Sleep(10 * time.Second)
 		total := atomic.LoadUint64(&statTotal)
 		build := atomic.LoadUint64(&statBuild)
 		known := atomic.LoadUint64(&statKnown)

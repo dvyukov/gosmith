@@ -35,8 +35,7 @@ type Context struct {
 
 func NewContext(w io.Writer, incorrect, nonterminating bool) *Context {
 	c := &Context{w: w, incorrect: incorrect, nonterminating: nonterminating}
-	c.types = builtinTypes()
-	c.boolType = c.types[0]
+	c.initTypes()
 	c.collectStatements()
 	c.collectExpressions()
 	return c
@@ -44,6 +43,10 @@ func NewContext(w io.Writer, incorrect, nonterminating bool) *Context {
 
 func (c *Context) F(f string, args ...interface{}) {
 	fmt.Fprintf(c.w, f, args...)
+}
+
+func (c *Context) rand(n int) int {
+	return rand.Intn(n)
 }
 
 func (c *Context) program() {
@@ -133,13 +136,6 @@ func (c *Context) existingTypeClass(cl TypeClass) (*Type, bool) {
 		}
 	}
 	return nil, false
-}
-
-func (c *Context) existingVar() (*Var, bool) {
-	if len(c.vars) == 0 {
-		return nil, false
-	}
-	return c.vars[rand.Intn(len(c.vars))], true
 }
 
 func (c *Context) existingVarType(typ *Type) (*Var, bool) {
