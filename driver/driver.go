@@ -8,6 +8,8 @@ export ASAN_OPTIONS="detect_leaks=0"
 CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" ./make.bash
 CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=386 go tool dist bootstrap
 CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=arm go tool dist bootstrap
+GOARCH=386 go install std
+GOARCH=arm go install std
 go install -race -a std
 go install -a std
 go get -u code.google.com/p/gosmith/gosmith
@@ -19,6 +21,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
@@ -26,12 +29,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"time"
 )
 
 var (
 	parallelism = flag.Int("p", runtime.NumCPU(), "number of parallel tests")
+	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,race,gccgo,ssa,gofmt)")
 	workDir     = flag.String("workdir", "./work", "working directory for temp files")
 
 	statTotal   uint64
@@ -40,22 +45,25 @@ var (
 	statGofmt   uint64
 	statKnown   uint64
 
-	knownBuildBugs = []*regexp.Regexp{
-		// gc
-		regexp.MustCompile("internal compiler error: out of fixed registers"),
-		regexp.MustCompile("constant [0-9]* overflows"),
-		//regexp.MustCompile("cannot use _ as value"),
-		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
-
-		// gccgo
-		regexp.MustCompile("internal compiler error: in fold_convert_loc, at fold-const.c:2072"),
-		regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
-	}
-
+	knownBuildBugs   = make(map[string][]*regexp.Regexp)
 	knownSsadumpBugs = []*regexp.Regexp{
 		regexp.MustCompile("constant .* overflows"),
 	}
 )
+
+func init() {
+	knownBuildBugs["gc.amd64.race"] = []*regexp.Regexp{
+		regexp.MustCompile("internal compiler error: found non-orig name node"),
+	}
+	// gc
+	//regexp.MustCompile("internal compiler error: out of fixed registers"),
+	//regexp.MustCompile("constant [0-9]* overflows"),
+	//regexp.MustCompile("internal compiler error: walkexpr ORECV"),
+
+	// gccgo
+	//regexp.MustCompile("internal compiler error: in fold_convert_loc, at fold-const.c:2072"),
+	//regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
+}
 
 func main() {
 	flag.Parse()
@@ -83,16 +91,15 @@ func main() {
 		gofmt := atomic.LoadUint64(&statGofmt)
 		log.Printf("%v tests, %v known, %v build, %v ssadump, %v gofmt",
 			total, known, build, ssadump, gofmt)
-		time.Sleep(5 * time.Second)
+		time.Sleep(3 * time.Second)
 	}
 }
 
 type Test struct {
 	seed   string
 	path   string
-	src    string
+	gopath string
 	keep   bool
-	srcbuf []byte
 }
 
 func (t *Test) Do() {
@@ -108,79 +115,80 @@ func (t *Test) Do() {
 	if !t.generateSource() {
 		return
 	}
-	if t.Build("gc", "amd64", false) {
+	if enabled("amd64") && t.Build("gc", "amd64", false) {
 		t.keep = true
 		return
 	}
-	if t.Build("gc", "386", false) {
+	if enabled("386") && t.Build("gc", "386", false) {
 		t.keep = true
 		return
 	}
-	if t.Build("gc", "arm", false) {
+	if enabled("arm") && t.Build("gc", "arm", false) {
 		t.keep = true
 		return
 	}
-	if t.Build("gc", "amd64", true) {
+	if enabled("race") && t.Build("gc", "amd64", true) {
 		t.keep = true
 		return
 	}
-	if t.Build("gccgo", "amd64", false) {
+	if enabled("gccgo") && t.Build("gccgo", "amd64", false) {
 		t.keep = true
 		return
 	}
-	if t.Ssadump() {
+	if enabled("ssa") && t.Ssadump() {
 		t.keep = true
 		return
 	}
-	if t.Gofmt() {
+	if enabled("gofmt") && t.Gofmt() {
 		t.keep = true
 		return
 	}
 }
 
+func enabled(what string) bool {
+	return *checkers == "all" || strings.Contains(*checkers, what)
+}
+
 func (t *Test) generateSource() bool {
-	t.src = filepath.Join(t.path, "src.go")
-	srcf, err := os.Create(t.src)
-	defer func() {
-		srcf.Close()
-	}()
+	out, err := exec.Command("gosmith2", "-seed", t.seed, "-dir", t.path).CombinedOutput()
 	if err != nil {
-		log.Printf("failed to create source file: %v", err)
+		log.Printf("failed to execute gosmith for seed %v: %v\n%v\n", t.seed, err, string(out))
 		return false
 	}
-	t.srcbuf, err = exec.Command("gosmith", "-seed", t.seed).CombinedOutput()
+	pwd, err := os.Getwd()
 	if err != nil {
-		log.Printf("failed to execute gosmith for seed %v: %v\n%v\n", t.seed, err, string(t.srcbuf))
+		log.Printf("failed to pwd: %v", err)
 		return false
 	}
-	srcf.Write(t.srcbuf)
+	t.gopath = filepath.Join(pwd, t.path)
 	return true
 }
 
 func (t *Test) Build(compiler, goarch string, race bool) bool {
-	args := []string{"build", "-o", t.src + "." + goarch, "-compiler", compiler}
+	outbin := filepath.Join(t.path, "bin")
+	args := []string{"build", "-o", outbin, "-compiler", compiler}
 	if race {
 		args = append(args, "-race")
 	}
-	args = append(args, t.src)
+	args = append(args, "main")
 	cmd := exec.Command("go", args...)
-	cmd.Env = append(os.Environ(), "GOARCH="+goarch)
+	cmd.Env = []string{"GOARCH=" + goarch, "GOPATH=" + t.gopath}
+	cmd.Env = append(cmd.Env, os.Environ()...)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return false
-	}
-	for _, known := range knownBuildBugs {
-		if known.Match(out) {
-			atomic.AddUint64(&statKnown, 1)
-			return false
-		}
 	}
 	typ := compiler + "." + goarch
 	if race {
 		typ += ".race"
 	}
-	outname := t.src + ".build." + typ
-	outf, err := os.Create(outname)
+	for _, known := range knownBuildBugs[typ] {
+		if known.Match(out) {
+			atomic.AddUint64(&statKnown, 1)
+			return false
+		}
+	}
+	outf, err := os.Create(filepath.Join(t.path, typ))
 	if err != nil {
 		log.Printf("failed to create output file: %v", err)
 	} else {
@@ -193,7 +201,10 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 }
 
 func (t *Test) Ssadump() bool {
-	out, err := exec.Command("ssadump", "-build=CDPF", t.src).CombinedOutput()
+	cmd := exec.Command("ssadump", "-build=CDPF", "main")
+	cmd.Env = []string{"GOPATH=" + t.gopath}
+	cmd.Env = append(cmd.Env, os.Environ()...)
+	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return false
 	}
@@ -203,7 +214,7 @@ func (t *Test) Ssadump() bool {
 			return false
 		}
 	}
-	outf, err := os.Create(t.src + ".ssadump")
+	outf, err := os.Create(filepath.Join(t.path, "ssadump"))
 	if err != nil {
 		log.Printf("failed to create output file: %v", err)
 	} else {
@@ -216,9 +227,19 @@ func (t *Test) Ssadump() bool {
 }
 
 func (t *Test) Gofmt() bool {
-	formatted, err := exec.Command("gofmt", t.src).CombinedOutput()
+	files := []string{"main/0.go", "main/1.go", "main/2.go", "a/0.go", "a/1.go", "a/2.go", "b/0.go", "b/1.go", "b/2.go"}
+	for _, f := range files {
+		if t.GofmtFile(filepath.Join(t.path, "src", f)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *Test) GofmtFile(fname string) bool {
+	formatted, err := exec.Command("gofmt", fname).CombinedOutput()
 	if err != nil {
-		outf, err := os.Create(t.src + ".gofmt")
+		outf, err := os.Create(fname + ".gofmt")
 		if err != nil {
 			log.Printf("failed to create output file: %v", err)
 		} else {
@@ -229,8 +250,8 @@ func (t *Test) Gofmt() bool {
 		atomic.AddUint64(&statGofmt, 1)
 		return true
 	}
-	fname := t.src + ".formatted"
-	outf, err := os.Create(fname)
+	fname1 := fname + ".formatted"
+	outf, err := os.Create(fname1)
 	if err != nil {
 		log.Printf("failed to create output file: %v", err)
 		return false
@@ -238,9 +259,9 @@ func (t *Test) Gofmt() bool {
 	outf.Write(formatted)
 	outf.Close()
 
-	formatted2, err := exec.Command("gofmt", fname).CombinedOutput()
+	formatted2, err := exec.Command("gofmt", fname1).CombinedOutput()
 	if err != nil {
-		outf, err := os.Create(t.src + ".gofmt")
+		outf, err := os.Create(fname + ".gofmt")
 		if err != nil {
 			log.Printf("failed to create output file: %v", err)
 		} else {
@@ -251,7 +272,7 @@ func (t *Test) Gofmt() bool {
 		atomic.AddUint64(&statGofmt, 1)
 		return true
 	}
-	outf2, err := os.Create(t.src + ".formatted2")
+	outf2, err := os.Create(fname + ".formatted2")
 	if err != nil {
 		log.Printf("failed to create output file: %v", err)
 		return false
@@ -260,13 +281,13 @@ func (t *Test) Gofmt() bool {
 	outf2.Close()
 
 	// Fails too often due to https://code.google.com/p/go/issues/detail?id=8021
-	/*
+	if true {
 		if bytes.Compare(formatted, formatted2) != 0 {
 			log.Printf("nonidempotent gofmt, seed %v\n", t.seed)
 			atomic.AddUint64(&statGofmt, 1)
 			return true
 		}
-	*/
+	}
 
 	removeWs := func(r rune) rune {
 		if r == ' ' || r == '\t' || r == '\n' {
@@ -274,16 +295,19 @@ func (t *Test) Gofmt() bool {
 		}
 		return r
 	}
-	stripped := bytes.Map(removeWs, t.srcbuf)
+	origfile, err := ioutil.ReadFile(fname)
+	if err != nil {
+		log.Printf("failed to read file: %v", err)
+	}
+	stripped := bytes.Map(removeWs, origfile)
 	stripped2 := bytes.Map(removeWs, formatted)
 	if bytes.Compare(stripped, stripped2) != 0 {
-		writeStrippedFile(t.src+".stripped0", stripped)
-		writeStrippedFile(t.src+".stripped1", stripped2)
+		writeStrippedFile(fname+".stripped0", stripped)
+		writeStrippedFile(fname+".stripped1", stripped2)
 		log.Printf("corrupting gofmt, seed %v\n", t.seed)
 		atomic.AddUint64(&statGofmt, 1)
 		return true
 	}
-
 	return false
 }
 

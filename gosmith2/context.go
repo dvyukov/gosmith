@@ -9,10 +9,12 @@ import (
 )
 
 const (
-	NPackages    = 3
-	NFiles       = 3
-	NStatements  = 30
-	NExpressions = 8
+	NPackages       = 3
+	NFiles          = 3
+	NStatements     = 30
+	NExprDepth      = 8
+	NExprCount      = 20
+	NTotalExprCount = NStatements * NExprCount
 )
 
 type Package struct {
@@ -25,13 +27,14 @@ type Package struct {
 }
 
 type Block struct {
-	str    string
-	parent *Block
-	sub    []*Block
-	consts []*Const
-	types  []*Type
-	funcs  []*Func
-	vars   []*Var
+	str        string
+	parent     *Block
+	extendable bool
+	sub        []*Block
+	consts     []*Const
+	types      []*Type
+	funcs      []*Func
+	vars       []*Var
 }
 
 type Func struct {
@@ -54,22 +57,29 @@ var (
 	curBlock   *Block
 	curFunc    *Func
 
-	packages    [NPackages]*Package
-	consts      []*Const
-	constScopes []int
-	types       []*Type
-	typeScopes  []int
-	vars        []*Var
-	varScopes   []int
+	packages [NPackages]*Package
+	/*
+		consts      []*Const
+		constScopes []int
+		types       []*Type
+		typeScopes  []int
+		//vars        []*Var
+		//varScopes   []int
+	*/
 
-	idSeq       int
-	typeDepth   int
-	stmtCount   int
-	exprDepth   int
-	boolType    *Type
-	intType     *Type
-	statements  []func()
-	expressions []func(res *Type) string
+	idSeq           int
+	typeDepth       int
+	stmtCount       int
+	exprDepth       int
+	exprCount       int
+	totalExprCount  int
+	predefinedTypes []*Type
+	stringType      *Type
+	boolType        *Type
+	intType         *Type
+	byteType        *Type
+	statements      []func()
+	expressions     []func(res *Type) string
 )
 
 func writeProgram(dir string) {
@@ -91,7 +101,7 @@ func initProgram() {
 }
 
 func newPackage(name string) *Package {
-	return &Package{name: name, imports: make(map[string]bool), top: &Block{}}
+	return &Package{name: name, imports: make(map[string]bool), top: &Block{extendable: true}}
 }
 
 func genPackage(pi int) {
@@ -110,11 +120,14 @@ func genPackage(pi int) {
 	}
 }
 
-func line(f string, args ...interface{}) *Block {
-	s := fmt.Sprintf(f, args...)
+func F(f string, args ...interface{}) string {
+	return fmt.Sprintf(f, args...)
+}
+
+func line(f string, args ...interface{}) {
+	s := F(f, args...)
 	b := &Block{str: s}
 	curBlock.sub = append(curBlock.sub, b)
-	return b
 }
 
 func resetContext(pi int) {
@@ -153,10 +166,7 @@ func genBlock() {
 
 func serializeProgram(dir string) {
 	for _, p := range packages {
-		path := dir
-		if p.name != "main" {
-			path = filepath.Join(dir, "src", p.name)
-		}
+		path := filepath.Join(dir, "src", p.name)
 		os.MkdirAll(path, os.ModePerm)
 		files := [NFiles]*bufio.Writer{}
 		for i := range files {
@@ -192,6 +202,7 @@ func serializeProgram(dir string) {
 func serializeBlock(w *bufio.Writer, b *Block) {
 	if b.str != "" {
 		w.WriteString(b.str)
+		//w.WriteString(F(" // vars=%+v types=%+v", b.vars, b.types))
 		w.WriteString("\n")
 	}
 	for _, b1 := range b.sub {
@@ -199,28 +210,87 @@ func serializeBlock(w *bufio.Writer, b *Block) {
 	}
 }
 
-func defineVar(t *Type) string {
+func vars() []*Var {
+	var vars []*Var
+	var f func(b *Block)
+	f = func(b *Block) {
+		for _, b1 := range b.sub {
+			vars = append(vars, b1.vars...)
+		}
+	}
+	f(curBlock)
+	return vars
+}
+
+func types() []*Type {
+	var types []*Type
+	types = append(types, predefinedTypes...)
+	var f func(b *Block)
+	f = func(b *Block) {
+		for _, b1 := range b.sub {
+			types = append(types, b1.types...)
+		}
+	}
+	f(curBlock)
+	return types
+}
+
+func defineVar(id string, t *Type) {
+	v := &Var{id: id, typ: t}
+	b := curBlock.sub[len(curBlock.sub)-1]
+	b.vars = append(b.vars, v)
+	//vars = append(vars, v)
+}
+
+func defineType(t *Type) {
+	b := curBlock.sub[len(curBlock.sub)-1]
+	b.types = append(b.types, t)
+	//types = append(types, t)
+}
+
+func materializeVar(t *Type) string {
+	// TODO: reset exprDepth and friends
 	// TODO: generate var in another package
 	id := newId()
 	/*
-	  if rndBool() {
-	    for i := curPackage; i < NPackages; i++ {
-	      if rndBool() || i == NPackages - 1 {
-	        if i != curPackage {
-	          packages[curPackage].imports[packages[i].name] = true
-	          id = packages[i].name + ".I" + id
-	        }
-	        packages[i].undefVars = append(packages[i].undefVars, &Var{id: id, typ: t})
-	        break
-	      }
-	    }
-	  } else*/{
-		if curBlock.parent.parent == nil {
+		curBlock0 := curBlock
+		patching0 := patching
+		patching = true
+		defer func() {
+			curBlock = curBlock0
+			patching = patching0
+		}()
+		for {
+			if !curBlock.extendable {
+				curBlock = curBlock.parent
+				continue
+			}
+			if rndBool() {
+				break
+			}
+		}
+	*/
+
+	// TODO: this code does not respect type scope,
+	// e.g. it tries to emit a var into another package when the type is function-local
+	/*if rndBool() {
+		for i := curPackage; i < NPackages; i++ {
+			if rndBool() || i == NPackages-1 {
+				id = "I" + id
+				packages[i].undefVars = append(packages[i].undefVars, &Var{id: id, typ: t})
+				if i != curPackage {
+					packages[curPackage].imports[packages[i].name] = true
+					id = packages[i].name + "." + id
+				}
+				break
+			}
+		}
+	} else*/{
+		if curBlock.parent.parent == nil || len(curBlock.sub) == 0 {
 			packages[curPackage].undefVars = append(packages[curPackage].undefVars, &Var{id: id, typ: t})
 		} else {
-			//curBlock0 := curBlock
 			line("%v := %v", id, rvalue(t))
-			vars = append(vars, &Var{id: id, typ: t})
+			defineVar(id, t)
 			//curBlock = curBlock0
 		}
 	}
@@ -244,30 +314,37 @@ func newId() string {
 	return fmt.Sprintf("id%v", idSeq)
 }
 
-func enterBlock(stickyFirstLine bool) {
-	varScopes = append(varScopes, len(vars))
-	typeScopes = append(typeScopes, len(types))
+func enterBlock(nonextendable bool) {
+	/*
+		varScopes = append(varScopes, len(vars))
+		typeScopes = append(typeScopes, len(types))
+	*/
 
-	b := &Block{parent: curBlock}
+	b := &Block{parent: curBlock, extendable: !nonextendable}
 	curBlock.sub = append(curBlock.sub, b)
 	curBlock = b
-	if !stickyFirstLine {
-		line("")
-	}
 }
 
 func leaveBlock() {
-	varLast := len(varScopes) - 1
-	varIdx := varScopes[varLast]
-	for _, v := range vars[varIdx:] {
-		line("_ = %v", v.id)
-	}
-	vars = vars[:varScopes[varLast]]
-	varScopes = varScopes[:varLast]
+	/*
+		varLast := len(varScopes) - 1
+		varIdx := varScopes[varLast]
+		for _, v := range vars[varIdx:] {
+			line("_ = %v", v.id)
+		}
+		vars = vars[:varScopes[varLast]]
+		varScopes = varScopes[:varLast]
 
-	typeLast := len(typeScopes) - 1
-	types = types[:typeScopes[typeLast]]
-	typeScopes = typeScopes[:typeLast]
+		typeLast := len(typeScopes) - 1
+		types = types[:typeScopes[typeLast]]
+		typeScopes = typeScopes[:typeLast]
+	*/
+
+	for _, b := range curBlock.sub {
+		for _, v := range b.vars {
+			line("_ = %v", v.id)
+		}
+	}
 
 	curBlock = curBlock.parent
 }

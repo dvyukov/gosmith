@@ -37,30 +37,38 @@ type Type struct {
 	ktyp    *Type   // map key, chan elem, array elem, slice elem, pointee type
 	vtyp    *Type   // map val
 	utyp    *Type   // underlying type
-	styp    []*Type // struct elements
+	styp    []*Type // struct elements, function arguments
+	rtyp    []*Type // function return values
 	literal func() string
+
+	// TODO: cache types
+	// pointerTo *Type
 }
 
 func initTypes() {
-	types = []*Type{
+	predefinedTypes = []*Type{
+		&Type{id: "string", class: ClassString, literal: func() string { return "\"foo\"" }},
 		&Type{id: "bool", class: ClassBoolean, literal: func() string { return "false" }},
 		&Type{id: "int", class: ClassNumeric, literal: func() string { return "1" }},
+		&Type{id: "byte", class: ClassNumeric, literal: func() string { return "byte(0)" }},
 		&Type{id: "uint", class: ClassNumeric, literal: func() string { return "uint(1)" }},
 		&Type{id: "uintptr", class: ClassNumeric, literal: func() string { return "uintptr(0)" }},
 		&Type{id: "int16", class: ClassNumeric, literal: func() string { return "int16(1)" }},
 		&Type{id: "float64", class: ClassNumeric, literal: func() string { return "1.1" }},
-		&Type{id: "string", class: ClassString, literal: func() string { return "\"foo\"" }},
+		&Type{id: "error", class: ClassInterface, literal: func() string { return "error(nil)" }},
 	}
-	for _, t := range types {
+	for _, t := range predefinedTypes {
 		t.utyp = t
 	}
-	boolType = types[0]
-	intType = types[1]
+	stringType = predefinedTypes[0]
+	boolType = predefinedTypes[1]
+	intType = predefinedTypes[2]
+	byteType = predefinedTypes[3]
 }
 
 func fmtTypeList(list []*Type, parens bool) string {
 	var buf bytes.Buffer
-	if parens || len(list) > 0 {
+	if parens || len(list) > 1 {
 		buf.Write([]byte{'('})
 	}
 	for i, t := range list {
@@ -69,7 +77,7 @@ func fmtTypeList(list []*Type, parens bool) string {
 		}
 		fmt.Fprintf(&buf, "%v", t.id)
 	}
-	if parens || len(list) > 0 {
+	if parens || len(list) > 1 {
 		buf.Write([]byte{')'})
 	}
 	return buf.String()
@@ -83,7 +91,7 @@ func atype(trait TypeClass) *Type {
 	for {
 		if typeDepth >= 3 || rndBool() {
 			var cand []*Type
-			for _, t := range types {
+			for _, t := range types() {
 				if satisfiesTrait(t, trait) {
 					cand = append(cand, t)
 				}
@@ -99,87 +107,71 @@ func atype(trait TypeClass) *Type {
 	}
 }
 
-func sliceOf(elem *Type) *Type {
-	return &Type{
-		id:    fmt.Sprintf("[]%v", elem.id),
-		class: ClassSlice,
-		ktyp:  elem,
-		literal: func() string {
-			return fmt.Sprintf("[]%v{}", elem.id)
-		}}
-}
-
 func typeLit() *Type {
-	return nil
-	/*
-		switch c.rand(8) {
-		case 0: // ArrayType
-			elem := c.aType(TraitAny)
-			size := c.rand(3)
-			return &Type{
-				id:    Id(fmt.Sprintf("[%v]%v", size, elem.id)),
-				class: ClassArray,
-				ktyp:  elem,
-				literal: func() string {
-					var buf bytes.Buffer
-					fmt.Fprintf(&buf, "[%v]%v{", size, elem.id)
-					for i := 0; i < size; i++ {
-						if i != 0 {
-							fmt.Fprintf(&buf, ",")
-						}
-						fmt.Fprintf(&buf, "%v", c.rvalue(elem))
+	switch choice("array", "chan", "struct", "pointer", "interface", "slice", "function", "map") {
+	case "array":
+		elem := atype(TraitAny)
+		size := rnd(3)
+		return &Type{
+			id:    F("[%v]%v", size, elem.id),
+			class: ClassArray,
+			ktyp:  elem,
+			literal: func() string {
+				var buf bytes.Buffer
+				fmt.Fprintf(&buf, "[%v]%v{", size, elem.id)
+				for i := 0; i < size; i++ {
+					if i != 0 {
+						fmt.Fprintf(&buf, ",")
 					}
-					fmt.Fprintf(&buf, "}")
-					return buf.String()
-				}}
-		case 1: // StructType
-			return nil
-		case 2: // PointerType
-			return nil
-		case 3: // FunctionType
-			rlist := c.aTypeList(TraitAny)
-			alist := c.aTypeList(TraitAny)
-			return &Type{
-				id:    Id(fmt.Sprintf("func%v %v", c.formatTypeList(alist, true), c.formatTypeList(rlist, false))),
-				class: ClassFunction,
-				rtyp:  rlist,
-				atyp:  alist,
-				literal: func() string {
-					return fmt.Sprintf("((func%v %v)(nil))", c.formatTypeList(alist, true), c.formatTypeList(rlist, false))
-				}}
-			return nil
-		case 4: // InterfaceType
-			return nil
-		case 5: // SliceType
-			elem := c.aType(TraitAny)
-			return c.sliceOf(elem)
-		case 6: // MapType
-			ktyp := c.aType(TraitHashable)
-			vtyp := c.aType(TraitAny)
-			return &Type{
-				id:    Id(fmt.Sprintf("map[%v]%v", ktyp.id, vtyp.id)),
-				class: ClassMap,
-				ktyp:  ktyp,
-				vtyp:  vtyp,
-				literal: func() string {
-					if c.rand(2) == 0 {
-						cap := ""
-						if c.rand(2) == 0 {
-							cap = "," + c.rvalue(c.intType)
-						}
-						return fmt.Sprintf("make(map[%v]%v %v)", ktyp.id, vtyp.id, cap)
-					} else {
-						return fmt.Sprintf("map[%v]%v{}", ktyp.id, vtyp.id)
+					fmt.Fprintf(&buf, "%v", rvalue(elem))
+				}
+				fmt.Fprintf(&buf, "}")
+				return buf.String()
+			}}
+	case "chan":
+		return chanOf(atype(TraitAny))
+	case "struct":
+		return nil
+	case "pointer":
+		return pointerTo(atype(TraitAny))
+	case "interface":
+		return nil
+	case "slice":
+		return sliceOf(atype(TraitAny))
+	case "function":
+		rlist := atypeList(TraitAny)
+		alist := atypeList(TraitAny)
+		return &Type{
+			id:    F("func%v %v", fmtTypeList(alist, true), fmtTypeList(rlist, false)),
+			class: ClassFunction,
+			styp:  alist,
+			rtyp:  rlist,
+			literal: func() string {
+				return F("((func%v %v)(nil))", fmtTypeList(alist, true), fmtTypeList(rlist, false))
+			}}
+	case "map":
+		ktyp := atype(TraitHashable)
+		vtyp := atype(TraitAny)
+		return &Type{
+			id:    F("map[%v]%v", ktyp.id, vtyp.id),
+			class: ClassMap,
+			ktyp:  ktyp,
+			vtyp:  vtyp,
+			literal: func() string {
+				if rndBool() {
+					cap := ""
+					if rndBool() {
+						cap = "," + rvalue(intType)
 					}
-				},
-			}
-		case 7: // ChannelType
-			elem := c.aType(TraitAny)
-			return c.chanOf(elem)
-		default:
-			panic("bad")
+					return F("make(map[%v]%v %v)", ktyp.id, vtyp.id, cap)
+				} else {
+					return F("map[%v]%v{}", ktyp.id, vtyp.id)
+				}
+			},
 		}
-	*/
+	default:
+		panic("bad")
+	}
 }
 
 func satisfiesTrait(t *Type, trait TypeClass) bool {
@@ -225,20 +217,37 @@ func atypeList(trait TypeClass) []*Type {
 	return list
 }
 
-/*
-
-func (c *Context) chanOf(elem *Type) *Type {
+func pointerTo(elem *Type) *Type {
 	return &Type{
-		id:    Id(fmt.Sprintf("chan %v", elem.id)),
+		id:    F("*%v", elem.id),
+		class: ClassPointer,
+		ktyp:  elem,
+		literal: func() string {
+			return F("(*%v)(nil)", elem.id)
+		}}
+}
+
+func chanOf(elem *Type) *Type {
+	return &Type{
+		id:    F("chan %v", elem.id),
 		class: ClassChan,
 		ktyp:  elem,
 		literal: func() string {
 			cap := ""
-			if c.rand(2) == 0 {
-				cap = "," + c.rvalue(c.intType)
+			if rndBool() {
+				cap = "," + rvalue(intType)
 			}
-			return fmt.Sprintf("make(chan %v %v)", elem.id, cap)
+			return F("make(chan %v %v)", elem.id, cap)
 		},
 	}
 }
-*/
+
+func sliceOf(elem *Type) *Type {
+	return &Type{
+		id:    F("[]%v", elem.id),
+		class: ClassSlice,
+		ktyp:  elem,
+		literal: func() string {
+			return F("[]%v{}", elem.id)
+		}}
+}

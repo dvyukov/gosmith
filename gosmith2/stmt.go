@@ -1,20 +1,22 @@
 package main
 
-import ()
+import (
+	_ "fmt"
+)
 
 func initStatements() {
 	statements = []func(){
 		stmtOas,
 		stmtAs,
-		//stmtInc,
-		//stmtIf,
-		//stmtFor,
-		//stmtSend,
-		//c.stmtRecv,
-		//c.stmtSelect,
-		//c.stmtTypeDecl,
-		//c.stmtCall,
-		//c.stmtReturn,
+		stmtInc,
+		stmtIf,
+		stmtFor,
+		stmtSend,
+		stmtRecv,
+		//stmtSelect,
+		stmtTypeDecl,
+		stmtCall,
+		stmtReturn,
 	}
 }
 
@@ -22,6 +24,7 @@ func genStatement() {
 	if stmtCount >= NStatements {
 		return
 	}
+	exprCount = 0
 	stmtCount++
 	statements[rnd(len(statements))]()
 }
@@ -29,10 +32,8 @@ func genStatement() {
 func stmtOas() {
 	id := newId()
 	t := atype(TraitAny)
-	b := line("%v := %v", id, rvalue(t))
-	v := &Var{id: id, typ: t}
-	b.vars = append(b.vars, v)
-	vars = append(vars, v)
+	line("%v := %v", id, rvalue(t))
+	defineVar(id, t)
 }
 
 func stmtReturn() {
@@ -44,172 +45,171 @@ func stmtAs() {
 	line("%v = %v", fmtLvalueList(types), fmtRvalueList(types))
 }
 
-/*
-func (c *Context) stmtInc() bool {
-  //b := newBlock("%v %v", lvalue(atype(ClassArith)), choice("--", "++"))
+func stmtInc() {
+	line("%v %v", lvalue(atype(ClassNumeric)), choice("--", "++"))
+}
 
-	v, ok := c.existingVarClass(ClassNumeric)
-	if !ok {
-		return false
+func stmtIf() {
+	enterBlock(true)
+	line("if %v {", rvalue(atype(ClassBoolean)))
+	genBlock()
+	if rndBool() {
+		line("} else {")
+		genBlock()
 	}
-	c.F("%v", v.id)
-	switch rand.Intn(2) {
-	case 0:
-		c.F("++\n")
-	case 1:
-		c.F("--\n")
-	}
-	return true
+	line("}")
+	leaveBlock()
 }
 
-func (c *Context) stmtIf() bool {
-  //enterBlock(true)
-  //line("if %v {\n", rvalue(atype(ClassBoolean)))
-  //genBlock()
-  //if randBool() {
-  //  line("} else {")
-  //  genBlock()
-  //}
-  //line("}")
-  //leaveBlock()
-
-	c.F("if ")
-	bt, _ := c.existingTypeClass(ClassBoolean)
-	c.expression(bt)
-	c.F(" {\n")
-	c.block()
-	c.F("}\n")
-	return true
-}
-
-func (c *Context) stmtFor() bool {
-	c.F("for ")
-	bt, _ := c.existingTypeClass(ClassBoolean)
-	c.expression(bt)
-	c.F(" {\n")
-	c.block()
-	c.F("}\n")
-	return true
-}
-
-func (c *Context) stmtSend() bool {
-	t := c.aType(TraitSendable)
-	c.F("%v <- %v\n", c.rvalue(t), c.rvalue(t.ktyp))
-	return true
-}
-
-func (c *Context) stmtRecv() bool {
-	t := c.aType(TraitReceivable)
-	ch := c.rvalue(t)
-	switch c.choice("single", "double", "single_decl", "double_decl") {
-	case "single":
-		c.F("%v = <-%v\n", c.lvalue(t.ktyp), ch)
-	case "double":
-		c.F("%v, %v = <-%v\n", c.lvalue(t.ktyp), c.lvalue(c.boolType), ch)
-	case "single_decl":
-		vv := &Var{id: c.newId(), typ: t.ktyp}
-		c.F("%v := <-%v\n", vv.id, ch)
-		c.vars = append(c.vars, vv)
-	case "double_decl":
-		vv := &Var{id: c.newId(), typ: t.ktyp}
-		ok := &Var{id: c.newId(), typ: c.boolType}
-		c.F("%v, %v := <-%v\n", vv.id, ok.id, ch)
-		c.vars = append(c.vars, vv)
-		c.vars = append(c.vars, ok)
-	default:
-		panic("bad")
-	}
-	return true
-}
-
-func (c *Context) stmtSelect() bool {
-	c.F("select {\n")
-	for rand.Intn(5) != 0 {
-		if rand.Intn(2) == 0 {
-			t := c.aType(TraitSendable)
-			c.F("case %v <- %v:\n", c.rvalue(t), c.rvalue(t.ktyp))
-			c.block()
-		} else {
-			c.EnterScope()
-			t := c.aType(TraitReceivable)
-			ch := c.rvalue(t)
-			switch c.choice("single", "double", "single_decl", "double_decl") {
-			case "single":
-				c.F("case %v = <-%v:\n", c.lvalue(t.ktyp), ch)
-			case "double":
-				c.F("case %v, %v = <-%v:\n", c.lvalue(t.ktyp), c.lvalue(c.boolType), ch)
-			case "single_decl":
-				vv := &Var{id: c.newId(), typ: t.ktyp}
-				c.F("case %v := <-%v:\n", vv.id, ch)
-				c.vars = append(c.vars, vv)
-			case "double_decl":
-				vv := &Var{id: c.newId(), typ: t.ktyp}
-				ok := &Var{id: c.newId(), typ: c.boolType}
-				c.F("case %v, %v := <-%v:\n", vv.id, ok.id, ch)
-				c.vars = append(c.vars, vv)
-				c.vars = append(c.vars, ok)
+func stmtFor() {
+	enterBlock(true)
+	// TODO: note that we are in for, to generate break/continue
+	switch choice("simple", "complex", "range") {
+	case "simple":
+		line("for %v {", rvalue(atype(ClassBoolean)))
+	case "complex":
+		line("for %v; %v; %v {", stmtSimple(), rvalue(atype(ClassBoolean)), stmtSimple())
+	case "range":
+		switch choice("slice" /*, "string", "channel", "map"*/) {
+		case "slice":
+			t := atype(TraitAny)
+			s := rvalue(sliceOf(t))
+			// TODO: handle _
+			switch choice("one", "two", "oneDecl", "twoDecl") {
+			case "one":
+				line("for %v = range %v {", lvalue(intType), s)
+			case "two":
+				line("for %v, %v = range %v {", lvalue(intType), lvalue(t), s)
+			case "oneDecl":
+				id := newId()
+				line("for %v := range %v {", id, s)
+				defineVar(id, intType)
+			case "twoDecl":
+				id := newId()
+				id2 := newId()
+				line("for %v, %v := range %v {", id, id2, s)
+				defineVar(id, intType)
+				defineVar(id2, t)
 			default:
 				panic("bad")
 			}
-			c.block()
-			c.LeaveScope()
+		case "string":
+		case "channel":
+		case "map":
+		default:
+			panic("bad")
 		}
+	default:
+		panic("bad")
 	}
-	if rand.Intn(2) == 0 {
-		c.F("default:\n")
-		c.block()
-	}
-	c.F("}\n")
-	return true
+	genBlock()
+	leaveBlock()
+	line("}")
 }
 
-func (c *Context) stmtTypeDecl() bool {
-	id := c.newId()
-	t := c.aType(TraitAny)
-	c.F("type %v %v\n", id, t.id)
+func stmtSimple() string {
+	// TODO: unimplemented
+	return F("%v %v", lvalue(atype(ClassNumeric)), choice("--", "++"))
+}
+
+func stmtSend() {
+	t := atype(TraitSendable)
+	line("%v <- %v", rvalue(t), rvalue(t.ktyp))
+}
+
+func stmtRecv() {
+	t := atype(TraitReceivable)
+	ch := rvalue(t)
+	switch choice("normal", "decl") {
+	case "normal":
+		line("%v, %v = <-%v", lvalue(t.ktyp), lvalue(boolType), ch)
+	case "decl":
+		vv := newId()
+		ok := newId()
+		line("%v, %v := <-%v", vv, ok, ch)
+		defineVar(vv, t.ktyp)
+		defineVar(ok, boolType)
+	default:
+		panic("bad")
+	}
+}
+
+func stmtTypeDecl() {
+	id := newId()
+	t := atype(TraitAny)
+	line("type %v %v", id, t.id)
 
 	newTyp := new(Type)
 	*newTyp = *t
 	newTyp.id = id
 	newTyp.literal = func() string {
-		return fmt.Sprintf("%v(%v)", id, t.literal())
+		return F("%v(%v)", id, t.literal())
 	}
-	if id != "_" {
-		c.types = append(c.types, newTyp)
-	}
-	return true
+	defineType(newTyp)
 }
 
-func (c *Context) stmtCall() bool {
-	if c.rand(2) == 0 {
-		return c.stmtCallBuiltin()
+func stmtSelect() {
+	line("select {")
+	for rnd(5) != 0 {
+		enterBlock(true)
+		elem := atype(TraitAny)
+		cht := chanOf(elem)
+		ch := rvalue(cht)
+		if rndBool() {
+			line("case %v <- %v:", ch, rvalue(elem))
+		} else {
+			switch choice("one", "two", "oneDecl", "twoDecl") {
+			case "one":
+				line("case %v = <-%v:", lvalue(elem), ch)
+			case "two":
+				line("case %v, %v = <-%v:", lvalue(elem), lvalue(boolType), ch)
+			case "oneDecl":
+				vv := newId()
+				line("case %v := <-%v:", vv, ch)
+				defineVar(vv, elem)
+			case "twoDecl":
+				vv := newId()
+				ok := newId()
+				line("case %v, %v := <-%v:", vv, ok, ch)
+				defineVar(vv, elem)
+				defineVar(ok, boolType)
+			default:
+				panic("bad")
+			}
+		}
+		genBlock()
+		leaveBlock()
 	}
-	t := c.aType(TraitFunction)
-	c.F("%v(%v)\n", c.rvalue(t), c.formatRvalueList(t.atyp))
-	return true
+	if rndBool() {
+		enterBlock(true)
+		line("default:")
+		genBlock()
+		leaveBlock()
+	}
+	line("}")
 }
 
-func (c *Context) stmtCallBuiltin() bool {
-	builtins := []string{"close", "copy", "delete", "panic", "print", "println", "recover"}
-	switch fn := builtins[c.rand(len(builtins))]; fn {
+func stmtCall() {
+	if rndBool() {
+		stmtCallBuiltin()
+	}
+	t := atype(ClassFunction)
+	line("%v(%v)", rvalue(t), fmtRvalueList(t.styp))
+}
+
+func stmtCallBuiltin() {
+	switch fn := choice("close", "copy", "delete", "panic", "print", "println", "recover"); fn {
 	case "close":
-		return false
 	case "copy":
-		return false
 	case "delete":
-		return false
 	case "panic":
-		return false
 	case "print":
 		fallthrough
 	case "println":
-		list := c.aTypeList(TraitPrintable)
-		c.F("%v(%v)\n", fn, c.formatRvalueList(list))
-		return false
+		list := atypeList(TraitPrintable)
+		line("%v(%v)", fn, fmtRvalueList(list))
 	case "recover":
-		return false
 	default:
 		panic("bad")
 	}
 }
-*/

@@ -9,24 +9,36 @@ func initExpressions() {
 	expressions = []func(res *Type) string{
 		exprLiteral,
 		exprVar,
-		//c.exprRecv,
-		//c.exprVar,
-		//c.exprArith,
-		//c.exprEqual,
-		//c.exprOrder,
-		//c.exprCall,
+		exprRecv,
+		exprVar,
+		exprArith,
+		exprEqual,
+		exprOrder,
+		exprCall,
+		exprAddress,
+		exprDeref,
+		exprSlice,
 		exprIndexSlice,
+		exprIndexArray,
+		exprIndexString,
+		exprIndexMap,
 	}
 }
 
 func expression(res *Type) string {
-	if exprDepth >= NExpressions {
+	exprCount++
+	totalExprCount++
+	if exprDepth >= NExprDepth || exprCount >= NExprCount || totalExprCount >= NTotalExprCount {
 		return exprLiteral(res)
 	}
-	exprDepth++
-	s := expressions[rnd(len(expressions))](res)
-	exprDepth--
-	return s
+	for {
+		exprDepth++
+		s := expressions[rnd(len(expressions))](res)
+		exprDepth--
+		if s != "" {
+			return s
+		}
+	}
 }
 
 func rvalue(t *Type) string {
@@ -34,8 +46,7 @@ func rvalue(t *Type) string {
 }
 
 func lvalue(t *Type) string {
-	// TODO: check existing vars
-	return defineVar(t)
+	return exprVar(t)
 }
 
 func fmtRvalueList(list []*Type) string {
@@ -65,136 +76,139 @@ func exprLiteral(res *Type) string {
 }
 
 func exprVar(res *Type) string {
-	// TODO: check existing vars
-	return defineVar(res)
-}
-
-/*
-func (c *Context) exprRecv(res *Type) bool {
-	t := c.chanOf(res)
-	c.F("(<-%v)", c.rvalue(t))
-	return true
-}
-
-func (c *Context) exprVar(res *Type) bool {
-	v, ok := c.existingVarType(res)
-	if !ok {
-		return false
+	for _, v := range vars() {
+		if v.typ == res {
+			return v.id
+		}
 	}
-	c.F("%v", v.id)
-	return true
+	return materializeVar(res)
 }
 
-func (c *Context) exprArith(res *Type) bool {
+func exprAddress(res *Type) string {
+	if res.class != ClassPointer {
+		return ""
+	}
+	return F("(%v)(&(%v))", res.id, lvalue(res.ktyp))
+}
+
+func exprDeref(res *Type) string {
+	return F("(*(%v))", lvalue(pointerTo(res)))
+}
+
+func exprRecv(res *Type) string {
+	// TODO: currently it triggers "internal compiler error: walkexpr ORECV" too frequently
+	if true {
+		return ""
+	}
+	t := chanOf(res)
+	return F("(<- %v)", rvalue(t))
+}
+
+func exprArith(res *Type) string {
 	if res.class != ClassNumeric {
-		return false
+		return ""
 	}
-	c.F("(")
-	c.expression(res)
-	switch rand.Intn(3) {
-	case 0:
-		c.F(" + ")
-	case 1:
-		c.F(" + ")
-	case 2:
-		c.F(" * ")
-	}
-	c.expression(res)
-	c.F(")")
-	return true
+	return F("(%v) %v (%v)", rvalue(res), choice("+", "*"), rvalue(res))
 }
 
-func (c *Context) exprEqual(res *Type) bool {
-	if res != c.boolType {
-		return false
+func exprEqual(res *Type) string {
+	if res != boolType {
+		return ""
 	}
-	typ := c.existingTypeComparable()
-	c.F("(")
-	c.expression(typ)
-	switch rand.Intn(2) {
-	case 0:
-		c.F(" == ")
-	case 1:
-		c.F(" != ")
-	}
-	c.expression(typ)
-	c.F(")")
-	return true
+	t := atype(TraitComparable)
+	return F("(%v) %v (%v)", rvalue(t), choice("==", "!="), rvalue(t))
 }
 
-func (c *Context) exprOrder(res *Type) bool {
-	if res != c.boolType {
-		return false
+func exprOrder(res *Type) string {
+	if res != boolType {
+		return ""
 	}
-	typ := c.existingTypeOrdered()
-	c.F("((")
-	c.expression(typ)
-	c.F(")")
-	switch rand.Intn(4) {
-	case 0:
-		c.F(" < ")
-	case 1:
-		c.F(" <= ")
-	case 2:
-		c.F(" > ")
-	case 3:
-		c.F(" >= ")
-	}
-	c.F("(")
-	c.expression(typ)
-	c.F("))")
-	return true
+	t := atype(TraitOrdered)
+	return F("(%v) %v (%v)", rvalue(t), choice("<", "<=", ">", ">="), rvalue(t))
+
 }
 
-func (c *Context) exprCall(ret *Type) bool {
-	if c.rand(2) == 0 {
-		return c.exprCallBuiltin(ret)
+func exprCall(ret *Type) string {
+	if rndBool() {
+		return exprCallBuiltin(ret)
 	}
-	return false
+	return ""
 }
 
-func (c *Context) exprCallBuiltin(ret *Type) bool {
-	builtins := []string{"append", "cap", "complex", "copy",
-		"imag", "len", "make", "new", "real", "recover"}
-	switch fn := builtins[c.rand(len(builtins))]; fn {
+func exprCallBuiltin(ret *Type) string {
+	switch fn := choice("append", "cap", "complex", "copy", "imag", "len", "make", "new", "real", "recover"); fn {
 	case "append":
-		return false
+		return ""
 	case "cap":
 		fallthrough
 	case "len":
-		if ret != c.intType { // TODO: must be convertable
-			return false
+		if ret != intType { // TODO: must be convertable
+			return ""
 		}
-		t := c.aType(TraitLenCapable)
+		t := atype(TraitLenCapable)
 		if (t.class == ClassString || t.class == ClassMap) && fn == "cap" {
-			return false
+			return ""
 
 		}
-		c.F("%v(%v)", fn, c.rvalue(t))
-		return true
+		return F("%v(%v)", fn, rvalue(t))
 	case "complex":
-		return false
+		return ""
 	case "copy":
-		return false
+		return ""
 	case "imag":
-		return false
+		return ""
 	case "make":
-		return false
+		return ""
 	case "new":
-		return false
+		return ""
 	case "real":
-		return false
+		return ""
 	case "recover":
-		return false
+		return ""
 	default:
 		panic("bad")
 	}
 }
-*/
+
+func exprSlice(ret *Type) string {
+	if ret.class != ClassSlice {
+		return ""
+	}
+	i0 := ""
+	if rndBool() {
+		i0 = lvalue(intType)
+	}
+	i2 := ""
+	if rndBool() {
+		i2 = ":" + lvalue(intType)
+	}
+	i1 := ":"
+	if rndBool() || i2 != "" {
+		i1 = ":" + lvalue(intType)
+	}
+	return F("(%v)[%v%v%v]", rvalue(ret), i0, i1, i2)
+}
 
 func exprIndexSlice(ret *Type) string {
-	//options := []string{"array", "slice", "ptr to array", "string", "map"}
+	return F("(%v)[%v]", rvalue(sliceOf(ret)), rvalue(intType))
+}
 
-	t := sliceOf(ret)
-	return fmt.Sprintf("(%v)[%v]", rvalue(t), rvalue(intType))
+func exprIndexString(ret *Type) string {
+	// TODO: currently generates too many out-of-bounds errors for string literals
+	if true {
+		return ""
+	}
+	if ret != byteType {
+		return ""
+	}
+	return F("(%v)[%v]", rvalue(stringType), rvalue(intType))
+}
+
+func exprIndexArray(ret *Type) string {
+	// TODO: also handle indexing of pointers to arrays
+	return ""
+}
+
+func exprIndexMap(ret *Type) string {
+	return ""
 }
