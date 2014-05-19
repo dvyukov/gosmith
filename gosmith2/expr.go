@@ -2,60 +2,74 @@ package main
 
 import (
 	"bytes"
-	"math/rand"
+	"fmt"
 )
 
-func (c *Context) expression(res *Type) {
-	if c.exprDepth >= 10 {
-		c.F("%v", res.literal())
-		return
-	}
-	c.exprDepth++
-	for {
-		f := c.expressions[rand.Intn(len(c.expressions))]
-		if !f(res) {
-			continue
-		}
-		break
-	}
-	c.exprDepth--
-}
-
-func (c *Context) initExpressions() {
-	c.expressions = []func(res *Type) bool{
-		c.exprLiteral,
+func initExpressions() {
+	expressions = []func(res *Type) string{
+		exprLiteral,
+		exprVar,
 		//c.exprRecv,
-		c.exprVar,
-		c.exprArith,
-		c.exprEqual,
-		c.exprOrder,
-		c.exprCall,
-		c.exprIndex,
+		//c.exprVar,
+		//c.exprArith,
+		//c.exprEqual,
+		//c.exprOrder,
+		//c.exprCall,
+		exprIndexSlice,
 	}
 }
 
-func (c *Context) rvalue(t *Type) string {
+func expression(res *Type) string {
+	if exprDepth >= NExpressions {
+		return exprLiteral(res)
+	}
+	exprDepth++
+	s := expressions[rnd(len(expressions))](res)
+	exprDepth--
+	return s
+}
+
+func rvalue(t *Type) string {
+	return expression(t)
+}
+
+func lvalue(t *Type) string {
+	// TODO: check existing vars
+	return defineVar(t)
+}
+
+func fmtRvalueList(list []*Type) string {
 	var buf bytes.Buffer
-	w := c.w
-	c.w = &buf
-	c.expression(t)
-	c.w = w
+	for i, t := range list {
+		if i != 0 {
+			buf.Write([]byte{','})
+		}
+		fmt.Fprintf(&buf, "%v", rvalue(t))
+	}
 	return buf.String()
 }
 
-func (c *Context) lvalue(t *Type) string {
-	v, ok := c.existingVarType(t)
-	if !ok {
-		return "_"
+func fmtLvalueList(list []*Type) string {
+	var buf bytes.Buffer
+	for i, t := range list {
+		if i != 0 {
+			buf.Write([]byte{','})
+		}
+		buf.WriteString(lvalue(t))
 	}
-	return string(v.id)
+	return buf.String()
 }
 
-func (c *Context) exprLiteral(res *Type) bool {
-	c.F("%v", res.literal())
-	return true
+func exprLiteral(res *Type) string {
+	return res.literal()
 }
 
+func exprVar(res *Type) string {
+	// TODO: check existing vars
+	return defineVar(res)
+}
+
+/*
 func (c *Context) exprRecv(res *Type) bool {
 	t := c.chanOf(res)
 	c.F("(<-%v)", c.rvalue(t))
@@ -77,7 +91,6 @@ func (c *Context) exprArith(res *Type) bool {
 	}
 	c.F("(")
 	c.expression(res)
-	c.F(")")
 	switch rand.Intn(3) {
 	case 0:
 		c.F(" + ")
@@ -86,7 +99,6 @@ func (c *Context) exprArith(res *Type) bool {
 	case 2:
 		c.F(" * ")
 	}
-	c.F("(")
 	c.expression(res)
 	c.F(")")
 	return true
@@ -99,14 +111,12 @@ func (c *Context) exprEqual(res *Type) bool {
 	typ := c.existingTypeComparable()
 	c.F("(")
 	c.expression(typ)
-	c.F(")")
 	switch rand.Intn(2) {
 	case 0:
 		c.F(" == ")
 	case 1:
 		c.F(" != ")
 	}
-	c.F("(")
 	c.expression(typ)
 	c.F(")")
 	return true
@@ -117,7 +127,7 @@ func (c *Context) exprOrder(res *Type) bool {
 		return false
 	}
 	typ := c.existingTypeOrdered()
-	c.F("(")
+	c.F("((")
 	c.expression(typ)
 	c.F(")")
 	switch rand.Intn(4) {
@@ -132,7 +142,7 @@ func (c *Context) exprOrder(res *Type) bool {
 	}
 	c.F("(")
 	c.expression(typ)
-	c.F(")")
+	c.F("))")
 	return true
 }
 
@@ -180,23 +190,11 @@ func (c *Context) exprCallBuiltin(ret *Type) bool {
 		panic("bad")
 	}
 }
+*/
 
-func (c *Context) exprIndex(ret *Type) bool {
-	options := []string{"array", "slice", "ptr to array", "string", "map"}
-	switch what := options[c.rand(len(options))]; what {
-	case "array":
-		return false
-	case "slice":
-		t := c.sliceOf(ret)
-		c.F("(%v)[%v]", c.rvalue(t), c.rvalue(c.intType))
-		return true
-	case "ptr to array":
-		return false
-	case "string":
-		return false
-	case "map":
-		return false
-	default:
-		panic("bad")
-	}
+func exprIndexSlice(ret *Type) string {
+	//options := []string{"array", "slice", "ptr to array", "string", "map"}
+
+	t := sliceOf(ret)
+	return fmt.Sprintf("(%v)[%v]", rvalue(t), rvalue(intType))
 }

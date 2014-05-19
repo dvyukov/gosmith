@@ -29,6 +29,7 @@ const (
 	TraitComparable
 	TraitIndexable
 	TraitReceivable
+	TraitSendable
 	TraitHashable
 	TraitPrintable
 	TraitLenCapable
@@ -168,7 +169,7 @@ func (c *Context) typeLit() *Type {
 
 func (c *Context) formatTypeList(list []*Type, parens bool) string {
 	var buf bytes.Buffer
-	if parens || len(list) > 0 {
+	if parens || len(list) > 1 {
 		buf.Write([]byte{'('})
 	}
 	for i, t := range list {
@@ -177,7 +178,7 @@ func (c *Context) formatTypeList(list []*Type, parens bool) string {
 		}
 		fmt.Fprintf(&buf, "%v", t.id)
 	}
-	if parens || len(list) > 0 {
+	if parens || len(list) > 1 {
 		buf.Write([]byte{')'})
 	}
 	return buf.String()
@@ -243,6 +244,8 @@ func satisfiesTrait(t *Type, trait TypeTrait) bool {
 		return t.class == ClassArray || t.class == ClassSlice || t.class == ClassString ||
 			t.class == ClassMap
 	case TraitReceivable:
+		return t.class == ClassChan
+	case TraitSendable:
 		return t.class == ClassChan
 	case TraitHashable:
 		return t.class != ClassFunction && t.class != ClassMap && t.class != ClassSlice &&

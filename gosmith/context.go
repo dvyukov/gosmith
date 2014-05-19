@@ -51,6 +51,10 @@ func (c *Context) rand(n int) int {
 	return rand.Intn(n)
 }
 
+func (c *Context) choice(ch ...string) string {
+	return ch[c.rand(len(ch))]
+}
+
 func (c *Context) program() {
 	c.F("package main\n")
 	c.F("import \"unsafe\"\n")
@@ -65,14 +69,7 @@ func (c *Context) program() {
 func (c *Context) function(name Id, ret []*Type) {
 	c.retType = ret
 	c.stmtCount = 0
-	c.F("func %v() (", name)
-	for i, t := range ret {
-		if i != 0 {
-			c.F(",")
-		}
-		c.F("%v", t.id)
-	}
-	c.F(") {\n")
+	c.F("func %v() %v {\n", name, c.formatTypeList(ret, false))
 	c.block()
 	c.stmtReturn()
 	c.F("}\n\n")
@@ -109,9 +106,6 @@ func (c *Context) LeaveScope() {
 }
 
 func (c *Context) newId() Id {
-	if rand.Intn(3) == 0 {
-		return "_"
-	}
 	c.idSeq++
 	return Id(fmt.Sprintf("id%v", c.idSeq))
 }

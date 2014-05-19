@@ -1,67 +1,53 @@
 package main
 
-import (
-	"fmt"
-	"math/rand"
-)
+import ()
 
-func (c *Context) statement() {
-	if c.stmtCount >= 30 {
+func initStatements() {
+	statements = []func(){
+		stmtOas,
+		stmtAs,
+		//stmtInc,
+		//stmtIf,
+		//stmtFor,
+		//stmtSend,
+		//c.stmtRecv,
+		//c.stmtSelect,
+		//c.stmtTypeDecl,
+		//c.stmtCall,
+		//c.stmtReturn,
+	}
+}
+
+func genStatement() {
+	if stmtCount >= NStatements {
 		return
 	}
-	c.stmtCount++
-	for {
-		f := c.statements[rand.Intn(len(c.statements))]
-		if !f() {
-			continue
-		}
-		break
-	}
+	stmtCount++
+	statements[rnd(len(statements))]()
 }
 
-func (c *Context) initStatements() {
-	c.statements = []func() bool{
-		c.stmtOas,
-		c.stmtAs,
-		c.stmtInc,
-		c.stmtIf,
-		c.stmtFor,
-		c.stmtSend,
-		//c.stmtRecv,
-		c.stmtSelect,
-		c.stmtTypeDecl,
-		c.stmtCall,
-		c.stmtReturn,
-	}
+func stmtOas() {
+	id := newId()
+	t := atype(TraitAny)
+	b := line("%v := %v", id, rvalue(t))
+	v := &Var{id: id, typ: t}
+	b.vars = append(b.vars, v)
+	vars = append(vars, v)
 }
 
-func (c *Context) stmtOas() bool {
-	id := c.newId()
-	if id == "_" {
-		return false
-	}
-	typ := c.existingType()
-	switch rand.Intn(2) {
-	case 0: // short form
-		c.F("%v := ", id)
-	case 1: // full form
-		c.F("var %v %v = ", id, typ.id)
-	}
-	c.expression(typ)
-	c.F("\n")
-	if id != "_" {
-		c.vars = append(c.vars, &Var{id: id, typ: typ})
-	}
-	return true
+func stmtReturn() {
+	line("return %v", fmtRvalueList(curFunc.rets))
 }
 
-func (c *Context) stmtAs() bool {
-	types := c.aTypeList(TraitAny)
-	c.F("%v = %v\n", c.formatLvalueList(types), c.formatRvalueList(types))
-	return true
+func stmtAs() {
+	types := atypeList(TraitAny)
+	line("%v = %v", fmtLvalueList(types), fmtRvalueList(types))
 }
 
+/*
 func (c *Context) stmtInc() bool {
+  //b := newBlock("%v %v", lvalue(atype(ClassArith)), choice("--", "++"))
+
 	v, ok := c.existingVarClass(ClassNumeric)
 	if !ok {
 		return false
@@ -77,6 +63,16 @@ func (c *Context) stmtInc() bool {
 }
 
 func (c *Context) stmtIf() bool {
+  //enterBlock(true)
+  //line("if %v {\n", rvalue(atype(ClassBoolean)))
+  //genBlock()
+  //if randBool() {
+  //  line("} else {")
+  //  genBlock()
+  //}
+  //line("}")
+  //leaveBlock()
+
 	c.F("if ")
 	bt, _ := c.existingTypeClass(ClassBoolean)
 	c.expression(bt)
@@ -216,15 +212,4 @@ func (c *Context) stmtCallBuiltin() bool {
 		panic("bad")
 	}
 }
-
-func (c *Context) stmtReturn() bool {
-	c.F("return ")
-	for i, t := range c.retType {
-		if i != 0 {
-			c.F(",")
-		}
-		c.F("%v", c.rvalue(t))
-	}
-	c.F("\n")
-	return true
-}
+*/

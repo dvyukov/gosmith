@@ -132,7 +132,10 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
-	//- gofmt idempotentness (gofmt several times and compare results)
+	if t.Gofmt() {
+		t.keep = true
+		return
+	}
 }
 
 func (t *Test) generateSource() bool {
@@ -256,11 +259,14 @@ func (t *Test) Gofmt() bool {
 	outf2.Write(formatted2)
 	outf2.Close()
 
-	if bytes.Compare(formatted, formatted2) != 0 {
-		log.Printf("nonidempotent gofmt, seed %v\n", t.seed)
-		atomic.AddUint64(&statGofmt, 1)
-		return true
-	}
+	// Fails too often due to https://code.google.com/p/go/issues/detail?id=8021
+	/*
+		if bytes.Compare(formatted, formatted2) != 0 {
+			log.Printf("nonidempotent gofmt, seed %v\n", t.seed)
+			atomic.AddUint64(&statGofmt, 1)
+			return true
+		}
+	*/
 
 	removeWs := func(r rune) rune {
 		if r == ' ' || r == '\t' || r == '\n' {
@@ -271,10 +277,30 @@ func (t *Test) Gofmt() bool {
 	stripped := bytes.Map(removeWs, t.srcbuf)
 	stripped2 := bytes.Map(removeWs, formatted)
 	if bytes.Compare(stripped, stripped2) != 0 {
-		log.Printf("nonidempotent gofmt, seed %v\n", t.seed)
+		writeStrippedFile(t.src+".stripped0", stripped)
+		writeStrippedFile(t.src+".stripped1", stripped2)
+		log.Printf("corrupting gofmt, seed %v\n", t.seed)
 		atomic.AddUint64(&statGofmt, 1)
 		return true
 	}
 
 	return false
+}
+
+func writeStrippedFile(fn string, data []byte) {
+	f, err := os.Create(fn)
+	if err != nil {
+		log.Printf("failed to create output file: %v", err)
+		return
+	}
+	defer f.Close()
+	const lineSize = 80
+	for i := 0; i < len(data); i += lineSize {
+		end := i + lineSize
+		if end > len(data) {
+			end = len(data)
+		}
+		f.Write(data[i:end])
+		f.Write([]byte{'\n'})
+	}
 }
