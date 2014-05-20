@@ -14,6 +14,8 @@ func initStatements() {
 		stmtSend,
 		stmtRecv,
 		//stmtSelect,
+		stmtSwitchExpr,
+		stmtSwitchType,
 		stmtTypeDecl,
 		stmtCall,
 		stmtReturn,
@@ -187,6 +189,55 @@ func stmtSelect() {
 		leaveBlock()
 	}
 	line("}")
+}
+
+func stmtSwitchExpr() {
+	var t *Type
+	cond := ""
+	if rndBool() {
+		t = atype(TraitComparable)
+		cond = rvalue(t)
+	} else {
+		t = boolType
+	}
+	enterBlock(true)
+	line("switch %v {", cond)
+	// TODO: we generate at most one case, because if we generate more,
+	// we can generate two cases with equal constants.
+	if rndBool() {
+		enterBlock(true)
+		line("case %v:", rvalue(t))
+		genBlock()
+		leaveBlock()
+	}
+	if rndBool() {
+		enterBlock(true)
+		line("default:")
+		genBlock()
+		leaveBlock()
+	}
+	line("}")
+	leaveBlock()
+}
+
+func stmtSwitchType() {
+	cond := lvalue(atype(TraitAny))
+	enterBlock(true)
+	line("switch COND := (interface{})(%v); COND.(type) {", cond)
+	if rndBool() {
+		enterBlock(true)
+		line("case %v:", atype(TraitAny).id)
+		genBlock()
+		leaveBlock()
+	}
+	if rndBool() {
+		enterBlock(true)
+		line("default:")
+		genBlock()
+		leaveBlock()
+	}
+	line("}")
+	leaveBlock()
 }
 
 func stmtCall() {

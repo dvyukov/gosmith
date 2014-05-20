@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -53,9 +54,10 @@ type Const struct {
 }
 
 var (
-	curPackage int
-	curBlock   *Block
-	curFunc    *Func
+	curPackage  int
+	curBlock    *Block
+	curBlockPos int
+	curFunc     *Func
 
 	packages [NPackages]*Package
 	/*
@@ -126,14 +128,22 @@ func F(f string, args ...interface{}) string {
 
 func line(f string, args ...interface{}) {
 	s := F(f, args...)
-	b := &Block{str: s}
-	curBlock.sub = append(curBlock.sub, b)
+	b := &Block{parent: curBlock, str: s}
+	if curBlockPos+1 == len(curBlock.sub) {
+		curBlock.sub = append(curBlock.sub, b)
+		curBlockPos++
+	} else {
+		curBlock.sub = append(curBlock.sub, nil)
+		copy(curBlock.sub[curBlockPos+2:], curBlock.sub[curBlockPos+1:])
+		curBlock.sub[curBlockPos+1] = b
+	}
 }
 
 func resetContext(pi int) {
 	curPackage = pi
 	p := packages[pi]
 	curBlock = p.top
+	curBlockPos = len(curBlock.sub) - 1
 	curFunc = nil
 }
 
@@ -194,56 +204,68 @@ func serializeProgram(dir string) {
 			}
 		}
 		for _, decl := range p.top.sub {
-			serializeBlock(files[rnd(len(files))], decl)
+			serializeBlock(files[rnd(len(files))], decl, 0)
 		}
 	}
 }
 
-func serializeBlock(w *bufio.Writer, b *Block) {
-	if b.str != "" {
+func serializeBlock(w *bufio.Writer, b *Block, d int) {
+	if false {
+		if b.str != "" {
+			w.WriteString(b.str)
+			w.WriteString("\n")
+		}
+	} else {
+		w.WriteString("/*" + strings.Repeat("*", d) + "*/ ")
 		w.WriteString(b.str)
-		//w.WriteString(F(" // vars=%+v types=%+v", b.vars, b.types))
+		w.WriteString(F(" // ext=%v vars=%v types=%v", b.extendable, len(b.vars), len(b.types)))
 		w.WriteString("\n")
 	}
 	for _, b1 := range b.sub {
-		serializeBlock(w, b1)
+		serializeBlock(w, b1, d+1)
 	}
 }
 
 func vars() []*Var {
 	var vars []*Var
-	var f func(b *Block)
-	f = func(b *Block) {
-		for _, b1 := range b.sub {
+	var f func(b *Block, pos int)
+	f = func(b *Block, pos int) {
+		for _, b1 := range b.sub[:pos+1] {
 			vars = append(vars, b1.vars...)
 		}
+		if b.parent != nil {
+			f(b.parent, len(b.parent.sub)-1)
+		}
 	}
-	f(curBlock)
+	f(curBlock, curBlockPos)
 	return vars
 }
 
 func types() []*Type {
 	var types []*Type
 	types = append(types, predefinedTypes...)
-	var f func(b *Block)
-	f = func(b *Block) {
-		for _, b1 := range b.sub {
+	var f func(b *Block, pos int)
+	f = func(b *Block, pos int) {
+		for _, b1 := range b.sub[:pos+1] {
 			types = append(types, b1.types...)
 		}
+		if b.parent != nil {
+			f(b.parent, len(b.parent.sub)-1)
+		}
 	}
-	f(curBlock)
+	f(curBlock, curBlockPos)
 	return types
 }
 
 func defineVar(id string, t *Type) {
 	v := &Var{id: id, typ: t}
-	b := curBlock.sub[len(curBlock.sub)-1]
+	b := curBlock.sub[curBlockPos]
 	b.vars = append(b.vars, v)
 	//vars = append(vars, v)
 }
 
 func defineType(t *Type) {
-	b := curBlock.sub[len(curBlock.sub)-1]
+	b := curBlock.sub[curBlockPos]
 	b.types = append(b.types, t)
 	//types = append(types, t)
 }
@@ -252,24 +274,49 @@ func materializeVar(t *Type) string {
 	// TODO: reset exprDepth and friends
 	// TODO: generate var in another package
 	id := newId()
-	/*
+	if true {
 		curBlock0 := curBlock
-		patching0 := patching
-		patching = true
+		curBlockPos0 := curBlockPos
 		defer func() {
 			curBlock = curBlock0
-			patching = patching0
+			curBlockPos = curBlockPos0
+			// TODO: update curBlockPos if we've inserted into the same block
 		}()
+	loop:
 		for {
-			if !curBlock.extendable {
-				curBlock = curBlock.parent
-				continue
-			}
-			if rndBool() {
+			if curBlock.parent == nil {
 				break
 			}
+			if !curBlock.extendable {
+				curBlock = curBlock.parent
+				curBlockPos = len(curBlock.sub) - 2
+				continue
+			}
+			if curBlockPos == 0 {
+				curBlock = curBlock.parent
+				curBlockPos = len(curBlock.sub) - 2
+				continue
+			}
+			if rnd(3) == 0 {
+				break
+			}
+			if curBlockPos >= 0 {
+				b := curBlock.sub[curBlockPos]
+				for _, t1 := range b.types {
+					if t1 == t {
+						break loop
+					}
+				}
+			}
 		}
-	*/
+		if curBlock.parent == nil {
+			packages[curPackage].undefVars = append(packages[curPackage].undefVars, &Var{id: id, typ: t})
+		} else {
+			line("%v := %v", id, rvalue(t))
+			defineVar(id, t)
+		}
+		return id
+	}
 
 	// TODO: this code does not respect type scope,
 	// e.g. it tries to emit a var into another package when the type is function-local
@@ -323,6 +370,7 @@ func enterBlock(nonextendable bool) {
 	b := &Block{parent: curBlock, extendable: !nonextendable}
 	curBlock.sub = append(curBlock.sub, b)
 	curBlock = b
+	curBlockPos = -1
 }
 
 func leaveBlock() {
@@ -347,4 +395,5 @@ func leaveBlock() {
 	}
 
 	curBlock = curBlock.parent
+	curBlockPos = len(curBlock.sub) - 1
 }
