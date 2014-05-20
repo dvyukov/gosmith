@@ -212,6 +212,23 @@ func serializeProgram(dir string) {
 			for imp := range p.imports {
 				fmt.Fprintf(w, "import \"%s\"\n", imp)
 			}
+			if i == 0 && p.name == "main" {
+				fmt.Fprintf(w, "import \"runtime\"\n")
+				fmt.Fprintf(w, "import \"time\"\n")
+				fmt.Fprintf(w, "import \"os\"\n")
+				fmt.Fprintf(w, "func init() {\n")
+				fmt.Fprintf(w, "	go func() {\n")
+				fmt.Fprintf(w, "		for {\n")
+				fmt.Fprintf(w, "			runtime.GC()\n")
+				fmt.Fprintf(w, "			runtime.Gosched()\n")
+				fmt.Fprintf(w, "		}\n")
+				fmt.Fprintf(w, "	}()\n")
+				fmt.Fprintf(w, "	go func() {\n")
+				fmt.Fprintf(w, "		time.Sleep(3 * time.Second)\n")
+				fmt.Fprintf(w, "		os.Exit(0)\n")
+				fmt.Fprintf(w, "	}()\n")
+				fmt.Fprintf(w, "}\n")
+			}
 			for imp := range p.imports {
 				fmt.Fprintf(w, "var _ = %s.UsePackage\n", imp)
 			}

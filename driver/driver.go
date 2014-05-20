@@ -36,18 +36,30 @@ import (
 
 var (
 	parallelism = flag.Int("p", runtime.NumCPU(), "number of parallel tests")
-	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,race,gccgo,ssa,gofmt)")
+	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,race,gccgo,ssa,gofmt,exec)")
 	workDir     = flag.String("workdir", "./work", "working directory for temp files")
 
 	statTotal   uint64
 	statBuild   uint64
 	statSsadump uint64
 	statGofmt   uint64
+	statExec    uint64
 	statKnown   uint64
 
 	knownBuildBugs   = make(map[string][]*regexp.Regexp)
 	knownSsadumpBugs = []*regexp.Regexp{
-		regexp.MustCompile("constant .* overflows"),
+	//regexp.MustCompile("constant .* overflows"),
+	}
+	knownExecBugs = []*regexp.Regexp{
+		regexp.MustCompile("^panic: "),
+		regexp.MustCompile("panic: runtime error: go of nil func value"),
+		regexp.MustCompile("panic: runtime error: index out of range"),
+		regexp.MustCompile("panic: runtime error: slice bounds out of range"),
+		regexp.MustCompile("panic: runtime error: invalid memory address or nil pointer dereference"),
+		regexp.MustCompile("fatal error: all goroutines are asleep - deadlock!"),
+		// bad:
+		regexp.MustCompile("fatal error: slice capacity smaller than length"),
+		regexp.MustCompile("copyabletopsegment"),
 	}
 )
 
@@ -98,8 +110,9 @@ func main() {
 		known := atomic.LoadUint64(&statKnown)
 		ssadump := atomic.LoadUint64(&statSsadump)
 		gofmt := atomic.LoadUint64(&statGofmt)
-		log.Printf("%v tests, %v known, %v build, %v ssadump, %v gofmt",
-			total, known, build, ssadump, gofmt)
+		exec := atomic.LoadUint64(&statExec)
+		log.Printf("%v tests, %v known, %v build, %v ssadump, %v gofmt, %v exec",
+			total, known, build, ssadump, gofmt, exec)
 		time.Sleep(3 * time.Second)
 	}
 }
@@ -128,7 +141,15 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
+	if enabled("amd64") && enabled("exec") && t.Exec() {
+		t.keep = true
+		return
+	}
 	if enabled("386") && t.Build("gc", "386", false) {
+		t.keep = true
+		return
+	}
+	if enabled("386") && enabled("exec") && t.Exec() {
 		t.keep = true
 		return
 	}
@@ -140,7 +161,15 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
+	if enabled("race") && enabled("exec") && t.Exec() {
+		t.keep = true
+		return
+	}
 	if enabled("gccgo") && t.Build("gccgo", "amd64", false) {
+		t.keep = true
+		return
+	}
+	if enabled("gccgo") && enabled("exec") && t.Exec() {
 		t.keep = true
 		return
 	}
@@ -212,6 +241,35 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 	}
 	log.Printf("%v build failed, seed %v\n", typ, t.seed)
 	atomic.AddUint64(&statBuild, 1)
+	return true
+}
+
+func (t *Test) Exec() bool {
+	outbin := filepath.Join(t.path, "bin")
+	if _, err := os.Stat(outbin); err != nil {
+		return false
+	}
+	cmd := exec.Command(outbin)
+	cmd.Env = []string{"GOMAXPROCS=2", "GOGC=0", "GODEBUG=efence=1"}
+	cmd.Env = append(cmd.Env, os.Environ()...)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return false
+	}
+	for _, known := range knownExecBugs {
+		if known.Match(out) {
+			return false
+		}
+	}
+	outf, err := os.Create(filepath.Join(t.path, "exec"))
+	if err != nil {
+		log.Printf("failed to create output file: %v", err)
+	} else {
+		outf.Write(out)
+		outf.Close()
+	}
+	log.Printf("exec failed, seed %v\n", t.seed)
+	atomic.AddUint64(&statExec, 1)
 	return true
 }
 
