@@ -60,6 +60,8 @@ var (
 		// bad:
 		regexp.MustCompile("fatal error: slice capacity smaller than length"),
 		regexp.MustCompile("copyabletopsegment"),
+		// ssa interp:
+		regexp.MustCompile("ssa/interp\\.\\(\\*frame\\)\\.runDefers"),
 	}
 )
 
@@ -141,7 +143,7 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
-	if enabled("amd64") && enabled("exec") && t.Exec() {
+	if enabled("amd64") && enabled("exec") && t.Exec("gc", "amd64", false) {
 		t.keep = true
 		return
 	}
@@ -149,7 +151,7 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
-	if enabled("386") && enabled("exec") && t.Exec() {
+	if enabled("386") && enabled("exec") && t.Exec("gc", "386", false) {
 		t.keep = true
 		return
 	}
@@ -161,7 +163,7 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
-	if enabled("race") && enabled("exec") && t.Exec() {
+	if enabled("race") && enabled("exec") && t.Exec("gc", "amd64", true) {
 		t.keep = true
 		return
 	}
@@ -169,11 +171,15 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
-	if enabled("gccgo") && enabled("exec") && t.Exec() {
+	if enabled("gccgo") && enabled("exec") && t.Exec("gccgo", "amd64", false) {
 		t.keep = true
 		return
 	}
 	if enabled("ssa") && t.Ssadump() {
+		t.keep = true
+		return
+	}
+	if enabled("ssa") && enabled("exec") && t.SsadumpExec() {
 		t.keep = true
 		return
 	}
@@ -203,7 +209,11 @@ func (t *Test) generateSource() bool {
 }
 
 func (t *Test) Build(compiler, goarch string, race bool) bool {
-	outbin := filepath.Join(t.path, "bin")
+	typ := compiler + "." + goarch
+	if race {
+		typ += ".race"
+	}
+	outbin := filepath.Join(t.path, "bin" + typ)
 	args := []string{"build", "-o", outbin, "-compiler", compiler}
 	if race {
 		args = append(args, "-race")
@@ -215,10 +225,6 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return false
-	}
-	typ := compiler + "." + goarch
-	if race {
-		typ += ".race"
 	}
 	for _, known := range knownBuildBugs[typ] {
 		if known.Match(out) {
@@ -244,13 +250,17 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 	return true
 }
 
-func (t *Test) Exec() bool {
-	outbin := filepath.Join(t.path, "bin")
+func (t *Test) Exec(compiler, goarch string, race bool) bool {
+	typ := compiler + "." + goarch
+	if race {
+		typ += ".race"
+	}
+	outbin := filepath.Join(t.path, "bin" + typ)
 	if _, err := os.Stat(outbin); err != nil {
 		return false
 	}
 	cmd := exec.Command(outbin)
-	cmd.Env = []string{"GOMAXPROCS=2", "GOGC=0", "GODEBUG=efence=1"}
+	cmd.Env = []string{"GOMAXPROCS=2", "GOGC=0"}
 	cmd.Env = append(cmd.Env, os.Environ()...)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -295,6 +305,32 @@ func (t *Test) Ssadump() bool {
 		outf.Close()
 	}
 	log.Printf("ssadump failed, seed %v\n", t.seed)
+	atomic.AddUint64(&statSsadump, 1)
+	return true
+}
+
+func (t *Test) SsadumpExec() bool {
+	cmd := exec.Command("ssadump", "-run", "main")
+	cmd.Env = []string{"GOPATH=" + t.gopath, "GOMAXPROCS=2", "GOGC=10"}
+	cmd.Env = append(cmd.Env, os.Environ()...)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return false
+	}
+	for _, known := range knownExecBugs {
+		if known.Match(out) {
+			atomic.AddUint64(&statKnown, 1)
+			return false
+		}
+	}
+	outf, err := os.Create(filepath.Join(t.path, "ssadump.run"))
+	if err != nil {
+		log.Printf("failed to create output file: %v", err)
+	} else {
+		outf.Write(out)
+		outf.Close()
+	}
+	log.Printf("ssadump.run failed, seed %v\n", t.seed)
 	atomic.AddUint64(&statSsadump, 1)
 	return true
 }
