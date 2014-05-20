@@ -13,12 +13,15 @@ func initStatements() {
 		stmtFor,
 		stmtSend,
 		stmtRecv,
-		//stmtSelect,
+		stmtSelect,
 		stmtSwitchExpr,
 		stmtSwitchType,
 		stmtTypeDecl,
 		stmtCall,
 		stmtReturn,
+		stmtBreak,
+		stmtContinue,
+		stmtSink,
 	}
 }
 
@@ -64,8 +67,11 @@ func stmtIf() {
 }
 
 func stmtFor() {
-	enterBlock(true)
 	// TODO: note that we are in for, to generate break/continue
+	enterBlock(true)
+	curBlock.isBreakable = true
+	curBlock.isContinuable = true
+	var vars []*Var
 	switch choice("simple", "complex", "range") {
 	case "simple":
 		line("for %v {", rvalue(atype(ClassBoolean)))
@@ -85,13 +91,13 @@ func stmtFor() {
 			case "oneDecl":
 				id := newId()
 				line("for %v := range %v {", id, s)
-				defineVar(id, intType)
+				vars = append(vars, &Var{id: id, typ: intType})
 			case "twoDecl":
 				id := newId()
 				id2 := newId()
 				line("for %v, %v := range %v {", id, id2, s)
-				defineVar(id, intType)
-				defineVar(id2, t)
+				vars = append(vars, &Var{id: id, typ: intType})
+				vars = append(vars, &Var{id: id2, typ: t})
 			default:
 				panic("bad")
 			}
@@ -104,9 +110,17 @@ func stmtFor() {
 	default:
 		panic("bad")
 	}
+	enterBlock(true)
+	if len(vars) > 0 {
+		line("")
+		for _, v := range vars {
+			defineVar(v.id, v.typ)
+		}
+	}
 	genBlock()
 	leaveBlock()
 	line("}")
+	leaveBlock()
 }
 
 func stmtSimple() string {
@@ -151,6 +165,7 @@ func stmtTypeDecl() {
 }
 
 func stmtSelect() {
+	enterBlock(true)
 	line("select {")
 	for rnd(5) != 0 {
 		enterBlock(true)
@@ -189,6 +204,7 @@ func stmtSelect() {
 		leaveBlock()
 	}
 	line("}")
+	leaveBlock()
 }
 
 func stmtSwitchExpr() {
@@ -201,16 +217,22 @@ func stmtSwitchExpr() {
 		t = boolType
 	}
 	enterBlock(true)
+	curBlock.isBreakable = true
 	line("switch %v {", cond)
 	// TODO: we generate at most one case, because if we generate more,
 	// we can generate two cases with equal constants.
+	fallth := false
 	if rndBool() {
 		enterBlock(true)
 		line("case %v:", rvalue(t))
 		genBlock()
 		leaveBlock()
+		if rndBool() {
+			fallth = true
+			line("fallthrough")
+		}
 	}
-	if rndBool() {
+	if fallth || rndBool() {
 		enterBlock(true)
 		line("default:")
 		genBlock()
@@ -223,6 +245,7 @@ func stmtSwitchExpr() {
 func stmtSwitchType() {
 	cond := lvalue(atype(TraitAny))
 	enterBlock(true)
+	curBlock.isBreakable = true
 	line("switch COND := (interface{})(%v); COND.(type) {", cond)
 	if rndBool() {
 		enterBlock(true)
@@ -245,22 +268,48 @@ func stmtCall() {
 		stmtCallBuiltin()
 	}
 	t := atype(ClassFunction)
-	line("%v(%v)", rvalue(t), fmtRvalueList(t.styp))
+	prefix := choice("", "go", "defer")
+	line("%v %v(%v)", prefix, rvalue(t), fmtRvalueList(t.styp))
 }
 
 func stmtCallBuiltin() {
+	prefix := choice("", "go", "defer")
 	switch fn := choice("close", "copy", "delete", "panic", "print", "println", "recover"); fn {
 	case "close":
+		line("%v %v(%v)", prefix, fn, rvalue(atype(ClassChan)))
 	case "copy":
+		line("%v %v", prefix, exprCopySlice())
 	case "delete":
+		t := atype(ClassMap)
+		line("%v %v(%v, %v)", prefix, fn, rvalue(t), rvalue(t.ktyp))
 	case "panic":
+		line("%v %v(%v)", prefix, fn, rvalue(atype(TraitAny)))
 	case "print":
 		fallthrough
 	case "println":
 		list := atypeList(TraitPrintable)
-		line("%v(%v)", fn, fmtRvalueList(list))
+		line("%v %v(%v)", prefix, fn, fmtRvalueList(list))
 	case "recover":
+		line("%v %v()", prefix, fn)
 	default:
 		panic("bad")
 	}
+}
+
+func stmtBreak() {
+	if !curBlock.isBreakable {
+		return
+	}
+	line("break")
+}
+
+func stmtContinue() {
+	if !curBlock.isContinuable {
+		return
+	}
+	line("continue")
+}
+
+func stmtSink() {
+	line("SINK = %v", exprVar(atype(TraitAny)))
 }

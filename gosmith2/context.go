@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	NPackages       = 3
-	NFiles          = 3
+	NPackages       = 1
+	NFiles          = 1
 	NStatements     = 30
 	NExprDepth      = 8
 	NExprCount      = 20
@@ -28,14 +28,16 @@ type Package struct {
 }
 
 type Block struct {
-	str        string
-	parent     *Block
-	extendable bool
-	sub        []*Block
-	consts     []*Const
-	types      []*Type
-	funcs      []*Func
-	vars       []*Var
+	str           string
+	parent        *Block
+	extendable    bool
+	isBreakable   bool
+	isContinuable bool
+	sub           []*Block
+	consts        []*Const
+	types         []*Type
+	funcs         []*Func
+	vars          []*Var
 }
 
 type Func struct {
@@ -59,15 +61,9 @@ var (
 	curBlockPos int
 	curFunc     *Func
 
-	packages [NPackages]*Package
-	/*
-		consts      []*Const
-		constScopes []int
-		types       []*Type
-		typeScopes  []int
-		//vars        []*Var
-		//varScopes   []int
-	*/
+	packages    [NPackages]*Package
+	toplevVars  []*Var
+	toplevFuncs []*Func
 
 	idSeq           int
 	typeDepth       int
@@ -80,6 +76,7 @@ var (
 	boolType        *Type
 	intType         *Type
 	byteType        *Type
+	efaceType       *Type
 	statements      []func()
 	expressions     []func(res *Type) string
 )
@@ -98,8 +95,8 @@ func writeProgram(dir string) {
 func initProgram() {
 	packages[0] = newPackage("main")
 	packages[0].undefFuncs = []*Func{&Func{name: "main", args: []*Type{}, rets: []*Type{}}}
-	packages[1] = newPackage("a")
-	packages[2] = newPackage("b")
+	//packages[1] = newPackage("a")
+	//packages[2] = newPackage("b")
 }
 
 func newPackage(name string) *Package {
@@ -131,12 +128,12 @@ func line(f string, args ...interface{}) {
 	b := &Block{parent: curBlock, str: s}
 	if curBlockPos+1 == len(curBlock.sub) {
 		curBlock.sub = append(curBlock.sub, b)
-		curBlockPos++
 	} else {
 		curBlock.sub = append(curBlock.sub, nil)
 		copy(curBlock.sub[curBlockPos+2:], curBlock.sub[curBlockPos+1:])
 		curBlock.sub[curBlockPos+1] = b
 	}
+	curBlockPos++
 }
 
 func resetContext(pi int) {
@@ -151,18 +148,33 @@ func genToplevFunction(pi int, f *Func) {
 	resetContext(pi)
 	curFunc = f
 	enterBlock(true)
-	line("func %v() %v {", f.name, fmtTypeList(f.rets, false))
+	enterBlock(true)
+	argIds := make([]string, len(f.args))
+	argStr := ""
+	for i, a := range f.args {
+		argIds[i] = newId()
+		if i != 0 {
+			argStr += ", "
+		}
+		argStr += argIds[i] + " " + a.id
+	}	
+	line("func %v(%v)%v {", f.name, argStr, fmtTypeList(f.rets, false))
+	for i, a := range f.args {
+		defineVar(argIds[i], a)
+	}
 	genBlock()
+	leaveBlock()
 	stmtReturn()
 	line("}")
 	leaveBlock()
 }
 
 func genToplevVar(pi int, v *Var) {
+	panic("bad")
 	resetContext(pi)
 	enterBlock(true)
-	// TODO: add all other toplev vars and funcs to context
 	line("var %v = %v", v.id, rvalue(v.typ))
+	toplevVars = append(toplevVars, v)
 	leaveBlock()
 }
 
@@ -201,6 +213,7 @@ func serializeProgram(dir string) {
 			}
 			if i == 0 {
 				fmt.Fprintf(w, "var UsePackage = 0\n")
+				fmt.Fprintf(w, "var SINK interface{}\n")
 			}
 		}
 		for _, decl := range p.top.sub {
@@ -210,7 +223,7 @@ func serializeProgram(dir string) {
 }
 
 func serializeBlock(w *bufio.Writer, b *Block, d int) {
-	if false {
+	if true {
 		if b.str != "" {
 			w.WriteString(b.str)
 			w.WriteString("\n")
@@ -228,6 +241,7 @@ func serializeBlock(w *bufio.Writer, b *Block, d int) {
 
 func vars() []*Var {
 	var vars []*Var
+	vars = append(vars, toplevVars...)
 	var f func(b *Block, pos int)
 	f = func(b *Block, pos int) {
 		for _, b1 := range b.sub[:pos+1] {
@@ -277,22 +291,20 @@ func materializeVar(t *Type) string {
 	if true {
 		curBlock0 := curBlock
 		curBlockPos0 := curBlockPos
+		curBlockLen0 := len(curBlock.sub)
 		defer func() {
+			if curBlock == curBlock0 {
+				curBlockPos0 += len(curBlock.sub) - curBlockLen0
+			}
 			curBlock = curBlock0
 			curBlockPos = curBlockPos0
-			// TODO: update curBlockPos if we've inserted into the same block
 		}()
 	loop:
 		for {
 			if curBlock.parent == nil {
 				break
 			}
-			if !curBlock.extendable {
-				curBlock = curBlock.parent
-				curBlockPos = len(curBlock.sub) - 2
-				continue
-			}
-			if curBlockPos == 0 {
+			if !curBlock.extendable || curBlockPos < 0 {
 				curBlock = curBlock.parent
 				curBlockPos = len(curBlock.sub) - 2
 				continue
@@ -303,14 +315,19 @@ func materializeVar(t *Type) string {
 			if curBlockPos >= 0 {
 				b := curBlock.sub[curBlockPos]
 				for _, t1 := range b.types {
-					if t1 == t {
+					if dependsOn(t, t1) {
 						break loop
 					}
 				}
 			}
+			curBlockPos--
 		}
 		if curBlock.parent == nil {
-			packages[curPackage].undefVars = append(packages[curPackage].undefVars, &Var{id: id, typ: t})
+			enterBlock(true)
+			line("var %v = %v", id, rvalue(t))
+			toplevVars = append(toplevVars, &Var{id: id, typ: t})
+			leaveBlock()
+			//packages[curPackage].undefVars = append(packages[curPackage].undefVars, &Var{id: id, typ: t})
 		} else {
 			line("%v := %v", id, rvalue(t))
 			defineVar(id, t)
@@ -344,6 +361,21 @@ func materializeVar(t *Type) string {
 	return id
 }
 
+func materializeFunc(res *Type) *Func {
+	f := &Func{name: newId(), args: atypeList(TraitGlobal), rets: []*Type{res}}
+
+	curBlock0 := curBlock
+	curBlockPos0 := curBlockPos
+	curFunc0 := curFunc
+	defer func() {
+		curBlock = curBlock0
+		curBlockPos = curBlockPos0
+		curFunc = curFunc0
+	}()
+	genToplevFunction(curPackage, f)
+	return f
+}
+
 func rnd(n int) int {
 	return rand.Intn(n)
 }
@@ -362,32 +394,15 @@ func newId() string {
 }
 
 func enterBlock(nonextendable bool) {
-	/*
-		varScopes = append(varScopes, len(vars))
-		typeScopes = append(typeScopes, len(types))
-	*/
-
 	b := &Block{parent: curBlock, extendable: !nonextendable}
+	b.isBreakable = curBlock.isBreakable
+	b.isContinuable = curBlock.isContinuable
 	curBlock.sub = append(curBlock.sub, b)
 	curBlock = b
 	curBlockPos = -1
 }
 
 func leaveBlock() {
-	/*
-		varLast := len(varScopes) - 1
-		varIdx := varScopes[varLast]
-		for _, v := range vars[varIdx:] {
-			line("_ = %v", v.id)
-		}
-		vars = vars[:varScopes[varLast]]
-		varScopes = varScopes[:varLast]
-
-		typeLast := len(typeScopes) - 1
-		types = types[:typeScopes[typeLast]]
-		typeScopes = typeScopes[:typeLast]
-	*/
-
 	for _, b := range curBlock.sub {
 		for _, v := range b.vars {
 			line("_ = %v", v.id)

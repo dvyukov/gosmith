@@ -29,6 +29,7 @@ const (
 	TraitHashable
 	TraitPrintable
 	TraitLenCapable
+	TraitGlobal
 )
 
 type Type struct {
@@ -51,6 +52,7 @@ func initTypes() {
 		&Type{id: "bool", class: ClassBoolean, literal: func() string { return "false" }},
 		&Type{id: "int", class: ClassNumeric, literal: func() string { return "1" }},
 		&Type{id: "byte", class: ClassNumeric, literal: func() string { return "byte(0)" }},
+		&Type{id: "interface{}", class: ClassInterface, literal: func() string { return "interface{}(nil)" }},
 		&Type{id: "uint", class: ClassNumeric, literal: func() string { return "uint(1)" }},
 		&Type{id: "uintptr", class: ClassNumeric, literal: func() string { return "uintptr(0)" }},
 		&Type{id: "int16", class: ClassNumeric, literal: func() string { return "int16(1)" }},
@@ -64,6 +66,7 @@ func initTypes() {
 	boolType = predefinedTypes[1]
 	intType = predefinedTypes[2]
 	byteType = predefinedTypes[3]
+	efaceType = predefinedTypes[4]
 }
 
 func fmtTypeList(list []*Type, parens bool) string {
@@ -203,6 +206,13 @@ func satisfiesTrait(t *Type, trait TypeClass) bool {
 	case TraitLenCapable:
 		return t.class == ClassString || t.class == ClassSlice || t.class == ClassArray ||
 			t.class == ClassMap || t.class == ClassChan
+	case TraitGlobal:
+		for _, t1 := range predefinedTypes {
+			if t == t1 {
+				return true
+			}
+		}
+		return false
 	default:
 		panic("bad")
 	}
@@ -250,4 +260,33 @@ func sliceOf(elem *Type) *Type {
 		literal: func() string {
 			return F("[]%v{}", elem.id)
 		}}
+}
+
+func dependsOn(t, t0 *Type) bool {
+	if t == nil {
+		return false
+	}
+	if t == t0 {
+		return true
+	}
+	if dependsOn(t.ktyp, t0) {
+		return true
+	}
+	if dependsOn(t.vtyp, t0) {
+		return true
+	}
+	if dependsOn(t.ktyp, t0) {
+		return true
+	}
+	for _, t1 := range t.styp {
+		if dependsOn(t1, t0) {
+			return true
+		}
+	}
+	for _, t1 := range t.rtyp {
+		if dependsOn(t1, t0) {
+			return true
+		}
+	}
+	return false
 }

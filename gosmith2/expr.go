@@ -9,8 +9,8 @@ func initExpressions() {
 	expressions = []func(res *Type) string{
 		exprLiteral,
 		exprVar,
+		exprFunc,
 		exprRecv,
-		exprVar,
 		exprArith,
 		exprEqual,
 		exprOrder,
@@ -84,6 +84,22 @@ func exprVar(res *Type) string {
 	return materializeVar(res)
 }
 
+func exprFunc(res *Type) string {
+	if !satisfiesTrait(res, TraitGlobal) {
+		return ""
+	}
+	var f *Func
+	for _, f = range toplevFuncs {
+		if len(f.rets) == 1 && f.rets[0] == res {
+			break
+		}
+	}
+	if f == nil {
+		f = materializeFunc(res)
+	}
+	return F("%v(%v)", f.name, fmtRvalueList(f.args))
+}
+
 func exprAddress(res *Type) string {
 	if res.class != ClassPointer {
 		return ""
@@ -96,10 +112,6 @@ func exprDeref(res *Type) string {
 }
 
 func exprRecv(res *Type) string {
-	// TODO: currently it triggers "internal compiler error: walkexpr ORECV" too frequently
-	if true {
-		return ""
-	}
 	t := chanOf(res)
 	return F("(<- %v)", rvalue(t))
 }
@@ -138,7 +150,19 @@ func exprCall(ret *Type) string {
 func exprCallBuiltin(ret *Type) string {
 	switch fn := choice("append", "cap", "complex", "copy", "imag", "len", "make", "new", "real", "recover"); fn {
 	case "append":
-		return ""
+		if ret.class != ClassSlice {
+			return ""
+		}
+		switch choice("one", "two", "slice") {
+		case "one":
+			return F("%v(%v, %v)", fn, rvalue(ret), rvalue(ret.ktyp))
+		case "two":
+			return F("%v(%v, %v, %v)", fn, rvalue(ret), rvalue(ret.ktyp), rvalue(ret.ktyp))
+		case "slice":
+			return F("%v(%v, %v...)", fn, rvalue(ret), rvalue(ret))
+		default:
+			panic("bad")
+		}
 	case "cap":
 		fallthrough
 	case "len":
@@ -154,19 +178,51 @@ func exprCallBuiltin(ret *Type) string {
 	case "complex":
 		return ""
 	case "copy":
-		return ""
+		if ret != intType {
+			return ""
+		}
+		return F("%v", exprCopySlice())
 	case "imag":
 		return ""
 	case "make":
-		return ""
+		if ret.class != ClassSlice && ret.class != ClassMap && ret.class != ClassChan {
+			return ""
+		}
+		cap := ""
+		if ret.class == ClassSlice {
+			if rndBool() {
+				cap = F(", %v", rvalue(intType))
+			} else {
+				// Careful to not generate "len larger than cap".
+				cap = F(", 0, %v", rvalue(intType))
+			}
+		} else if rndBool() {
+			cap = F(", %v", rvalue(intType))
+		}
+		return F("make(%v %v)", ret.id, cap)
 	case "new":
-		return ""
+		if ret.class != ClassPointer {
+			return ""
+		}
+		return F("new(%v)", ret.ktyp.id)
 	case "real":
 		return ""
 	case "recover":
-		return ""
+		if ret != efaceType {
+			return ""
+		}
+		return "recover()"
 	default:
 		panic("bad")
+	}
+}
+
+func exprCopySlice() string {
+	if rndBool() {
+		t := atype(ClassSlice)
+		return F("copy(%v, %v)", rvalue(t), rvalue(t))
+	} else {
+		return F("copy(%v, %v)", rvalue(sliceOf(byteType)), rvalue(stringType))
 	}
 }
 

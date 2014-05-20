@@ -52,17 +52,26 @@ var (
 )
 
 func init() {
+	knownBuildBugs["gc"] = []*regexp.Regexp{
+		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
+		regexp.MustCompile("fallthrough statement out of place"),
+	}
+	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{
+	}
+	knownBuildBugs["gc.386"] = []*regexp.Regexp{
+	}
+	knownBuildBugs["gc.arm"] = []*regexp.Regexp{
+	}
 	knownBuildBugs["gc.amd64.race"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: found non-orig name node"),
 	}
-	// gc
-	//regexp.MustCompile("internal compiler error: out of fixed registers"),
-	//regexp.MustCompile("constant [0-9]* overflows"),
-	//regexp.MustCompile("internal compiler error: walkexpr ORECV"),
-
-	// gccgo
-	//regexp.MustCompile("internal compiler error: in fold_convert_loc, at fold-const.c:2072"),
-	//regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
+	knownBuildBugs["gccgo.amd64"] = []*regexp.Regexp{
+		regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
+		regexp.MustCompile("internal compiler error: in write_specific_type_functions, at go/gofrontend/types.cc:1819"),
+		regexp.MustCompile("internal compiler error: in fold_convert_loc, at fold-const.c:2072"),
+		regexp.MustCompile("internal compiler error: in do_determine_types, at go/gofrontend/statements.cc:400"),
+		regexp.MustCompile("error: too many arguments"),
+	}
 }
 
 func main() {
@@ -188,6 +197,12 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 			return false
 		}
 	}
+	for _, known := range knownBuildBugs[compiler] {
+		if known.Match(out) {
+			atomic.AddUint64(&statKnown, 1)
+			return false
+		}
+	}
 	outf, err := os.Create(filepath.Join(t.path, typ))
 	if err != nil {
 		log.Printf("failed to create output file: %v", err)
@@ -227,7 +242,7 @@ func (t *Test) Ssadump() bool {
 }
 
 func (t *Test) Gofmt() bool {
-	files := []string{"main/0.go", "main/1.go", "main/2.go", "a/0.go", "a/1.go", "a/2.go", "b/0.go", "b/1.go", "b/2.go"}
+	files := []string{"main/0.go"/*, "main/1.go", "main/2.go", "a/0.go", "a/1.go", "a/2.go", "b/0.go", "b/1.go", "b/2.go"*/}
 	for _, f := range files {
 		if t.GofmtFile(filepath.Join(t.path, "src", f)) {
 			return true
@@ -290,7 +305,7 @@ func (t *Test) GofmtFile(fname string) bool {
 	}
 
 	removeWs := func(r rune) rune {
-		if r == ' ' || r == '\t' || r == '\n' {
+		if r == ' ' || r == '\t' || r == '\n' || r == '(' || r == ')' {
 			return -1
 		}
 		return r
