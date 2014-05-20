@@ -56,12 +56,9 @@ func init() {
 		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
 		regexp.MustCompile("fallthrough statement out of place"),
 	}
-	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{
-	}
-	knownBuildBugs["gc.386"] = []*regexp.Regexp{
-	}
-	knownBuildBugs["gc.arm"] = []*regexp.Regexp{
-	}
+	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{}
+	knownBuildBugs["gc.386"] = []*regexp.Regexp{}
+	knownBuildBugs["gc.arm"] = []*regexp.Regexp{}
 	knownBuildBugs["gc.amd64.race"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: found non-orig name node"),
 	}
@@ -71,6 +68,9 @@ func init() {
 		regexp.MustCompile("internal compiler error: in fold_convert_loc, at fold-const.c:2072"),
 		regexp.MustCompile("internal compiler error: in do_determine_types, at go/gofrontend/statements.cc:400"),
 		regexp.MustCompile("error: too many arguments"),
+		regexp.MustCompile("error: expected '<-' or '='"),
+		regexp.MustCompile("error: slice end must be integer"),
+		regexp.MustCompile("error: argument 2 has incompatible type"),
 	}
 }
 
@@ -242,7 +242,7 @@ func (t *Test) Ssadump() bool {
 }
 
 func (t *Test) Gofmt() bool {
-	files := []string{"main/0.go"/*, "main/1.go", "main/2.go", "a/0.go", "a/1.go", "a/2.go", "b/0.go", "b/1.go", "b/2.go"*/}
+	files := []string{"main/0.go" /*, "main/1.go", "main/2.go", "a/0.go", "a/1.go", "a/2.go", "b/0.go", "b/1.go", "b/2.go"*/}
 	for _, f := range files {
 		if t.GofmtFile(filepath.Join(t.path, "src", f)) {
 			return true

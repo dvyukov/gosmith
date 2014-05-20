@@ -10,6 +10,7 @@ func initExpressions() {
 		exprLiteral,
 		exprVar,
 		exprFunc,
+		exprSelectorField,
 		exprRecv,
 		exprArith,
 		exprEqual,
@@ -46,7 +47,16 @@ func rvalue(t *Type) string {
 }
 
 func lvalue(t *Type) string {
-	return exprVar(t)
+	switch choice("var", "index", "deref") {
+	case "var":
+		return exprVar(t)
+	case "index":
+		return exprIndexSlice(t)
+	case "deref":
+		return exprDeref(t)
+	default:
+		panic("bad")
+	}
 }
 
 func fmtRvalueList(list []*Type) string {
@@ -82,6 +92,10 @@ func exprVar(res *Type) string {
 		}
 	}
 	return materializeVar(res)
+}
+
+func exprSelectorField(res *Type) string {
+	return ""
 }
 
 func exprFunc(res *Type) string {

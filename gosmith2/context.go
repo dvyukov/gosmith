@@ -94,7 +94,11 @@ func writeProgram(dir string) {
 
 func initProgram() {
 	packages[0] = newPackage("main")
-	packages[0].undefFuncs = []*Func{&Func{name: "main", args: []*Type{}, rets: []*Type{}}}
+	packages[0].undefFuncs = []*Func{
+		&Func{name: "init", args: []*Type{}, rets: []*Type{}},
+		&Func{name: "init", args: []*Type{}, rets: []*Type{}},
+		&Func{name: "main", args: []*Type{}, rets: []*Type{}},
+	}
 	//packages[1] = newPackage("a")
 	//packages[2] = newPackage("b")
 }
@@ -157,7 +161,7 @@ func genToplevFunction(pi int, f *Func) {
 			argStr += ", "
 		}
 		argStr += argIds[i] + " " + a.id
-	}	
+	}
 	line("func %v(%v)%v {", f.name, argStr, fmtTypeList(f.rets, false))
 	for i, a := range f.args {
 		defineVar(argIds[i], a)

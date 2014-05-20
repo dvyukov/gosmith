@@ -138,7 +138,19 @@ func typeLit() *Type {
 	case "pointer":
 		return pointerTo(atype(TraitAny))
 	case "interface":
-		return nil
+		var buf bytes.Buffer
+		fmt.Fprintf(&buf, "interface { ")
+		for rndBool() {
+			fmt.Fprintf(&buf, " %v %v %v\n", newId(), fmtTypeList(atypeList(TraitAny), true), fmtTypeList(atypeList(TraitAny), false))
+		}
+		fmt.Fprintf(&buf, "}")
+		return &Type{
+			id:    buf.String(),
+			class: ClassInterface,
+			literal: func() string {
+				return F("%v(nil)", buf.String())
+			},
+		}
 	case "slice":
 		return sliceOf(atype(TraitAny))
 	case "function":
@@ -265,6 +277,10 @@ func sliceOf(elem *Type) *Type {
 func dependsOn(t, t0 *Type) bool {
 	if t == nil {
 		return false
+	}
+	if t.class == ClassInterface {
+		// We don't know how to walk all types referenced by an interface yet.
+		return true
 	}
 	if t == t0 {
 		return true
