@@ -60,7 +60,8 @@ var (
 		// bad:
 		regexp.MustCompile("fatal error: slice capacity smaller than length"),
 		regexp.MustCompile("copyabletopsegment"),
-    regexp.MustCompile("runtime.gostartcallfn"),
+		regexp.MustCompile("runtime.gostartcallfn"),
+		regexp.MustCompile("__go_map_delete"),
 		// ssa interp:
 		regexp.MustCompile("ssa/interp\\.\\(\\*frame\\)\\.runDefers"),
 	}
@@ -70,7 +71,8 @@ func init() {
 	knownBuildBugs["gc"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
 		regexp.MustCompile("fallthrough statement out of place"),
-    regexp.MustCompile("internal compiler error: walkexpr: switch 1 unknown op ASOP"),
+		// regexp.MustCompile("internal compiler error: walkexpr: switch 1 unknown op ASOP"),
+		regexp.MustCompile("internal compiler error: fault"), // https://code.google.com/p/go/issues/detail?id=8058
 	}
 	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{}
 	knownBuildBugs["gc.386"] = []*regexp.Regexp{}
@@ -83,10 +85,12 @@ func init() {
 		regexp.MustCompile("internal compiler error: in write_specific_type_functions, at go/gofrontend/types.cc:1819"),
 		regexp.MustCompile("internal compiler error: in fold_convert_loc, at fold-const.c:2072"),
 		regexp.MustCompile("internal compiler error: in do_determine_types, at go/gofrontend/statements.cc:400"),
+		regexp.MustCompile("internal compiler error: verify_gimple failed"),
 		regexp.MustCompile("error: too many arguments"),
 		regexp.MustCompile("error: expected '<-' or '='"),
 		regexp.MustCompile("error: slice end must be integer"),
 		regexp.MustCompile("error: argument 2 has incompatible type"),
+		regexp.MustCompile("__normal_iterator"),
 	}
 }
 
@@ -215,7 +219,7 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 	if race {
 		typ += ".race"
 	}
-	outbin := filepath.Join(t.path, "bin" + typ)
+	outbin := filepath.Join(t.path, "bin"+typ)
 	args := []string{"build", "-o", outbin, "-compiler", compiler}
 	if race {
 		args = append(args, "-race")
@@ -257,7 +261,7 @@ func (t *Test) Exec(compiler, goarch string, race bool) bool {
 	if race {
 		typ += ".race"
 	}
-	outbin := filepath.Join(t.path, "bin" + typ)
+	outbin := filepath.Join(t.path, "bin"+typ)
 	if _, err := os.Stat(outbin); err != nil {
 		return false
 	}
@@ -273,7 +277,7 @@ func (t *Test) Exec(compiler, goarch string, race bool) bool {
 			return false
 		}
 	}
-	outf, err := os.Create(filepath.Join(t.path, "exec"))
+	outf, err := os.Create(filepath.Join(t.path, "exec."+typ))
 	if err != nil {
 		log.Printf("failed to create output file: %v", err)
 	} else {

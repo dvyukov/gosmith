@@ -10,12 +10,20 @@ import (
 )
 
 const (
-	NPackages       = 1
-	NFiles          = 1
-	NStatements     = 30
+	NPackages = 3
+	NFiles    = 3
+
+	NStatements     = 20
+	NExprDepth      = 6
+	NExprCount      = 15
+	NTotalExprCount = 500
+
+/*
+	NStatements     = 50
 	NExprDepth      = 8
 	NExprCount      = 20
-	NTotalExprCount = NStatements * NExprCount
+	NTotalExprCount = 5000
+*/
 )
 
 type Package struct {
@@ -25,6 +33,9 @@ type Package struct {
 
 	undefFuncs []*Func
 	undefVars  []*Var
+
+	toplevVars  []*Var
+	toplevFuncs []*Func
 }
 
 type Block struct {
@@ -61,9 +72,7 @@ var (
 	curBlockPos int
 	curFunc     *Func
 
-	packages    [NPackages]*Package
-	toplevVars  []*Var
-	toplevFuncs []*Func
+	packages [NPackages]*Package
 
 	idSeq           int
 	typeDepth       int
@@ -99,8 +108,8 @@ func initProgram() {
 		&Func{name: "init", args: []*Type{}, rets: []*Type{}},
 		&Func{name: "main", args: []*Type{}, rets: []*Type{}},
 	}
-	//packages[1] = newPackage("a")
-	//packages[2] = newPackage("b")
+	packages[1] = newPackage("a")
+	packages[2] = newPackage("b")
 }
 
 func newPackage(name string) *Package {
@@ -108,6 +117,12 @@ func newPackage(name string) *Package {
 }
 
 func genPackage(pi int) {
+	typeDepth = 0
+	stmtCount = 0
+	exprDepth = 0
+	exprCount = 0
+	totalExprCount = 0
+
 	p := packages[pi]
 	for len(p.undefFuncs) != 0 || len(p.undefVars) != 0 {
 		if len(p.undefFuncs) != 0 {
@@ -156,7 +171,7 @@ func genToplevFunction(pi int, f *Func) {
 	argIds := make([]string, len(f.args))
 	argStr := ""
 	for i, a := range f.args {
-		argIds[i] = newId("param")
+		argIds[i] = newId("Param")
 		if i != 0 {
 			argStr += ", "
 		}
@@ -171,15 +186,17 @@ func genToplevFunction(pi int, f *Func) {
 	stmtReturn()
 	line("}")
 	leaveBlock()
+	if f.name != "init" {
+		packages[curPackage].toplevFuncs = append(packages[curPackage].toplevFuncs, f)
+	}
 }
 
 func genToplevVar(pi int, v *Var) {
-	panic("bad")
 	resetContext(pi)
 	enterBlock(true)
 	line("var %v = %v", v.id, rvalue(v.typ))
-	toplevVars = append(toplevVars, v)
 	leaveBlock()
+	packages[curPackage].toplevVars = append(packages[curPackage].toplevVars, v)
 }
 
 func genBlock() {
@@ -262,7 +279,7 @@ func serializeBlock(w *bufio.Writer, b *Block, d int) {
 
 func vars() []*Var {
 	var vars []*Var
-	vars = append(vars, toplevVars...)
+	vars = append(vars, packages[curPackage].toplevVars...)
 	var f func(b *Block, pos int)
 	f = func(b *Block, pos int) {
 		for _, b1 := range b.sub[:pos+1] {
@@ -296,94 +313,81 @@ func defineVar(id string, t *Type) {
 	v := &Var{id: id, typ: t}
 	b := curBlock.sub[curBlockPos]
 	b.vars = append(b.vars, v)
-	//vars = append(vars, v)
 }
 
 func defineType(t *Type) {
 	b := curBlock.sub[curBlockPos]
 	b.types = append(b.types, t)
-	//types = append(types, t)
 }
 
 func materializeVar(t *Type) string {
-	// TODO: reset exprDepth and friends
 	// TODO: generate var in another package
-	id := newId("var")
-	if true {
-		curBlock0 := curBlock
-		curBlockPos0 := curBlockPos
-		curBlockLen0 := len(curBlock.sub)
-		defer func() {
-			if curBlock == curBlock0 {
-				curBlockPos0 += len(curBlock.sub) - curBlockLen0
-			}
-			curBlock = curBlock0
-			curBlockPos = curBlockPos0
-		}()
-	loop:
-		for {
-			if curBlock.parent == nil {
-				break
-			}
-			if !curBlock.extendable || curBlockPos < 0 {
-				curBlock = curBlock.parent
-				curBlockPos = len(curBlock.sub) - 2
-				continue
-			}
-			if rnd(3) == 0 {
-				break
-			}
-			if curBlockPos >= 0 {
-				b := curBlock.sub[curBlockPos]
-				for _, t1 := range b.types {
-					if dependsOn(t, t1) {
-						break loop
-					}
+	id := newId("Var")
+	curBlock0 := curBlock
+	curBlockPos0 := curBlockPos
+	curBlockLen0 := len(curBlock.sub)
+	exprDepth0 := exprDepth
+	exprCount0 := exprCount
+	defer func() {
+		if curBlock == curBlock0 {
+			curBlockPos0 += len(curBlock.sub) - curBlockLen0
+		}
+		curBlock = curBlock0
+		curBlockPos = curBlockPos0
+		exprDepth = exprDepth0
+		exprCount = exprCount0
+	}()
+loop:
+	for {
+		if curBlock.parent == nil {
+			break
+		}
+		if !curBlock.extendable || curBlockPos < 0 {
+			curBlock = curBlock.parent
+			curBlockPos = len(curBlock.sub) - 2
+			continue
+		}
+		if rnd(3) == 0 {
+			break
+		}
+		if curBlockPos >= 0 {
+			b := curBlock.sub[curBlockPos]
+			for _, t1 := range b.types {
+				if dependsOn(t, t1) {
+					break loop
 				}
 			}
-			curBlockPos--
 		}
-		if curBlock.parent == nil {
-			enterBlock(true)
-			line("var %v = %v", id, rvalue(t))
-			toplevVars = append(toplevVars, &Var{id: id, typ: t})
-			leaveBlock()
-			//packages[curPackage].undefVars = append(packages[curPackage].undefVars, &Var{id: id, typ: t})
-		} else {
-			line("%v := %v", id, rvalue(t))
-			defineVar(id, t)
-		}
-		return id
+		curBlockPos--
 	}
-
-	// TODO: this code does not respect type scope,
-	// e.g. it tries to emit a var into another package when the type is function-local
-	/*if rndBool() {
+	if curBlock.parent == nil {
 		for i := curPackage; i < NPackages; i++ {
 			if rndBool() || i == NPackages-1 {
-				id = "I" + id
-				packages[i].undefVars = append(packages[i].undefVars, &Var{id: id, typ: t})
-				if i != curPackage {
+				if i == curPackage {
+					// emit global var into the current package
+					enterBlock(true)
+					line("var %v = %v", id, rvalue(t))
+					packages[curPackage].toplevVars = append(packages[curPackage].toplevVars, &Var{id: id, typ: t})
+					leaveBlock()
+				} else {
+					// emit global var into another package
+					packages[i].undefVars = append(packages[i].undefVars, &Var{id: id, typ: t})
 					packages[curPackage].imports[packages[i].name] = true
 					id = packages[i].name + "." + id
 				}
 				break
 			}
 		}
-	} else*/{
-		if curBlock.parent.parent == nil || len(curBlock.sub) == 0 {
-			packages[curPackage].undefVars = append(packages[curPackage].undefVars, &Var{id: id, typ: t})
-		} else {
-			line("%v := %v", id, rvalue(t))
-			defineVar(id, t)
-			//curBlock = curBlock0
-		}
+	} else {
+		// emit local var
+		line("%v := %v", id, rvalue(t))
+		defineVar(id, t)
 	}
 	return id
 }
 
 func materializeFunc(res *Type) *Func {
-	f := &Func{name: newId("func"), args: atypeList(TraitGlobal), rets: []*Type{res}}
+	f := &Func{name: newId("Func"), args: atypeList(TraitGlobal), rets: []*Type{res}}
 
 	curBlock0 := curBlock
 	curBlockPos0 := curBlockPos
@@ -410,6 +414,9 @@ func choice(ch ...string) string {
 }
 
 func newId(prefix string) string {
+	if prefix[0] < 'A' || prefix[0] > 'Z' {
+		panic("unexported id")
+	}
 	idSeq++
 	return fmt.Sprintf("%v%v", prefix, idSeq)
 }

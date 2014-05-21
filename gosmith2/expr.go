@@ -102,7 +102,6 @@ func exprSelectorField(res *Type) string {
 		st := atype(ClassStruct)
 		for _, e := range st.elems {
 			if e.typ == res {
-				println("found struct on iter", i, "type", res.id)
 				return F("(%v).%v", rvalue(st), e.id)
 			}
 		}
@@ -115,8 +114,9 @@ func exprFunc(res *Type) string {
 		return ""
 	}
 	var f *Func
-	for _, f = range toplevFuncs {
-		if len(f.rets) == 1 && f.rets[0] == res {
+	for _, f1 := range packages[curPackage].toplevFuncs {
+		if len(f1.rets) == 1 && f1.rets[0] == res {
+			f = f1
 			break
 		}
 	}

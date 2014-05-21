@@ -122,7 +122,7 @@ func typeLit() *Type {
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, "struct { ")
 		for rndBool() {
-			e := &Var{id: newId("field"), typ: atype(TraitAny)}
+			e := &Var{id: newId("Field"), typ: atype(TraitAny)}
 			elems = append(elems, e)
 			fmt.Fprintf(&buf, "%v %v\n", e.id, e.typ.id)
 		}
@@ -141,7 +141,7 @@ func typeLit() *Type {
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, "interface { ")
 		for rndBool() {
-			fmt.Fprintf(&buf, " %v %v %v\n", newId("method"), fmtTypeList(atypeList(TraitAny), true), fmtTypeList(atypeList(TraitAny), false))
+			fmt.Fprintf(&buf, " %v %v %v\n", newId("Method"), fmtTypeList(atypeList(TraitAny), true), fmtTypeList(atypeList(TraitAny), false))
 		}
 		fmt.Fprintf(&buf, "}")
 		return &Type{
