@@ -200,7 +200,7 @@ func enabled(what string) bool {
 }
 
 func (t *Test) generateSource() bool {
-	out, err := exec.Command("gosmith2", "-seed", t.seed, "-dir", t.path).CombinedOutput()
+	out, err := exec.Command("gosmith", "-seed", t.seed, "-dir", t.path).CombinedOutput()
 	if err != nil {
 		log.Printf("failed to execute gosmith for seed %v: %v\n%v\n", t.seed, err, string(out))
 		return false
