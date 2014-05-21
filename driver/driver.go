@@ -60,6 +60,7 @@ var (
 		// bad:
 		regexp.MustCompile("fatal error: slice capacity smaller than length"),
 		regexp.MustCompile("copyabletopsegment"),
+		regexp.MustCompile("scanbitvector"),
 		regexp.MustCompile("runtime.gostartcallfn"),
 		regexp.MustCompile("__go_map_delete"),
 		// ssa interp:
@@ -91,6 +92,7 @@ func init() {
 		regexp.MustCompile("error: slice end must be integer"),
 		regexp.MustCompile("error: argument 2 has incompatible type"),
 		regexp.MustCompile("__normal_iterator"),
+		regexp.MustCompile("Unsafe_type_conversion_expression::do_get_backend"),
 	}
 }
 

@@ -62,6 +62,13 @@ func lvalue(t *Type) string {
 	}
 }
 
+func lvalueOrBlank(t *Type) string {
+	if rndBool() {
+		return "_"
+	}
+	return lvalue(t)
+}
+
 func fmtRvalueList(list []*Type) string {
 	var buf bytes.Buffer
 	for i, t := range list {
@@ -82,6 +89,33 @@ func fmtLvalueList(list []*Type) string {
 		buf.WriteString(lvalue(t))
 	}
 	return buf.String()
+}
+
+func fmtOasVarList(list []*Type) (str string, newVars []*Var) {
+	allVars := vars()
+	var buf bytes.Buffer
+	for i, t := range list {
+		expr := "_"
+		// First, try to find an existing var in the same scope.
+		if rndBool() {
+			for _, v := range allVars {
+				if v.typ == t && v.block == curBlock {
+					expr = v.id
+					break
+				}
+			}
+		}
+		if rndBool() || (i == len(list)-1 && len(newVars) == 0) {
+			expr = newId("Var")
+			newVars = append(newVars, &Var{id: expr, typ: t})
+		}
+
+		if i != 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString(expr)
+	}
+	return buf.String(), newVars
 }
 
 func exprLiteral(res *Type) string {

@@ -54,6 +54,7 @@ func initTypes() {
 		&Type{id: "int", class: ClassNumeric, literal: func() string { return "1" }},
 		&Type{id: "byte", class: ClassNumeric, literal: func() string { return "byte(0)" }},
 		&Type{id: "interface{}", class: ClassInterface, literal: func() string { return "interface{}(nil)" }},
+		&Type{id: "rune", class: ClassNumeric, literal: func() string { return "rune(0)" }},
 		&Type{id: "uint", class: ClassNumeric, literal: func() string { return "uint(1)" }},
 		&Type{id: "uintptr", class: ClassNumeric, literal: func() string { return "uintptr(0)" }},
 		&Type{id: "int16", class: ClassNumeric, literal: func() string { return "int16(1)" }},
@@ -68,6 +69,7 @@ func initTypes() {
 	intType = predefinedTypes[2]
 	byteType = predefinedTypes[3]
 	efaceType = predefinedTypes[4]
+	runeType = predefinedTypes[5]
 }
 
 func fmtTypeList(list []*Type, parens bool) string {

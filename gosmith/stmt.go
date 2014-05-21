@@ -35,22 +35,12 @@ func genStatement() {
 }
 
 func stmtOas() {
-	n := rnd(3) + 1
-	vars := make([]*Var, n)
-	hasNew := false
-	for i := 0; i < n; i++ {
-		var v *Var
-		if rndBool() || (!hasNew && i == n-1) {
-			v = &Var{id: newId("Var"), typ: atype(TraitAny)}
-		} else {
-			v = &Var{id: newId("Var"), typ: atype(TraitAny)}
-		}
-		vars = append(vars, v)
+	list := atypeList(TraitAny)
+	str, vars := fmtOasVarList(list)
+	line("%v := %v", str, fmtRvalueList(list))
+	for _, v := range vars {
+		defineVar(v.id, v.typ)
 	}
-	id := newId("Var")
-	t := atype(TraitAny)
-	line("%v := %v", id, rvalue(t))
-	defineVar(id, t)
 }
 
 func stmtReturn() {
@@ -68,18 +58,24 @@ func stmtInc() {
 
 func stmtIf() {
 	enterBlock(true)
-	line("if %v {", rvalue(atype(ClassBoolean)))
+	enterBlock(true)
+	if rndBool() {
+		line("if %v {", rvalue(atype(ClassBoolean)))
+	} else {
+		line("if %v; %v {", stmtSimple(true, nil), rvalue(atype(ClassBoolean)))
+	}
 	genBlock()
 	if rndBool() {
 		line("} else {")
 		genBlock()
 	}
+	leaveBlock()
 	line("}")
 	leaveBlock()
 }
 
 func stmtFor() {
-	// TODO: note that we are in for, to generate break/continue
+	enterBlock(true)
 	enterBlock(true)
 	curBlock.isBreakable = true
 	curBlock.isContinuable = true
@@ -88,34 +84,81 @@ func stmtFor() {
 	case "simple":
 		line("for %v {", rvalue(atype(ClassBoolean)))
 	case "complex":
-		line("for %v; %v; %v {", stmtSimple(), rvalue(atype(ClassBoolean)), stmtSimple())
+		line("for %v; %v; %v {", stmtSimple(true, nil), rvalue(atype(ClassBoolean)), stmtSimple(false, nil))
 	case "range":
-		switch choice("slice" /*, "string", "channel", "map"*/) {
+		switch choice("slice", "string", "channel", "map") {
 		case "slice":
 			t := atype(TraitAny)
 			s := rvalue(sliceOf(t))
-			// TODO: handle _
 			switch choice("one", "two", "oneDecl", "twoDecl") {
 			case "one":
-				line("for %v = range %v {", lvalue(intType), s)
+				line("for %v = range %v {", lvalueOrBlank(intType), s)
 			case "two":
-				line("for %v, %v = range %v {", lvalue(intType), lvalue(t), s)
+				line("for %v, %v = range %v {", lvalueOrBlank(intType), lvalueOrBlank(t), s)
 			case "oneDecl":
 				id := newId("Var")
 				line("for %v := range %v {", id, s)
 				vars = append(vars, &Var{id: id, typ: intType})
 			case "twoDecl":
-				id := newId("Var")
-				id2 := newId("Var")
-				line("for %v, %v := range %v {", id, id2, s)
-				vars = append(vars, &Var{id: id, typ: intType})
-				vars = append(vars, &Var{id: id2, typ: t})
+				types := []*Type{intType, t}
+				str := ""
+				str, vars = fmtOasVarList(types)
+				line("for %v := range %v {", str, s)
 			default:
 				panic("bad")
 			}
 		case "string":
+			s := rvalue(stringType)
+			switch choice("one", "two", "oneDecl", "twoDecl") {
+			case "one":
+				line("for %v = range %v {", lvalueOrBlank(intType), s)
+			case "two":
+				line("for %v, %v = range %v {", lvalueOrBlank(intType), lvalueOrBlank(runeType), s)
+			case "oneDecl":
+				id := newId("Var")
+				line("for %v := range %v {", id, s)
+				vars = append(vars, &Var{id: id, typ: intType})
+			case "twoDecl":
+				types := []*Type{intType, runeType}
+				str := ""
+				str, vars = fmtOasVarList(types)
+				line("for %v := range %v {", str, s)
+			default:
+				panic("bad")
+			}
 		case "channel":
+			cht := atype(ClassChan)
+			ch := rvalue(cht)
+			switch choice("one", "oneDecl") {
+			case "one":
+				line("for %v = range %v {", lvalue(cht.ktyp), ch)
+			case "oneDecl":
+				id := newId("Var")
+				line("for %v := range %v {", id, ch)
+				vars = append(vars, &Var{id: id, typ: cht.ktyp})
+			default:
+				panic("bad")
+			}
 		case "map":
+			t := atype(ClassMap)
+			m := rvalue(t)
+			switch choice("one", "two", "oneDecl", "twoDecl") {
+			case "one":
+				line("for %v = range %v {", lvalue(t.ktyp), m)
+			case "two":
+				line("for %v, %v = range %v {", lvalue(t.ktyp), lvalue(t.vtyp), m)
+			case "oneDecl":
+				id := newId("Var")
+				line("for %v := range %v {", id, m)
+				vars = append(vars, &Var{id: id, typ: t.ktyp})
+			case "twoDecl":
+				types := []*Type{t.ktyp, t.vtyp}
+				str := ""
+				str, vars = fmtOasVarList(types)
+				line("for %v := range %v {", str, m)
+			default:
+				panic("bad")
+			}
 		default:
 			panic("bad")
 		}
@@ -131,13 +174,47 @@ func stmtFor() {
 	}
 	genBlock()
 	leaveBlock()
+	leaveBlock()
 	line("}")
 	leaveBlock()
 }
 
-func stmtSimple() string {
-	// TODO: unimplemented
-	return F("%v %v", lvalue(atype(ClassNumeric)), choice("--", "++"))
+func stmtSimple(oas bool, newVars *[]*Var) string {
+	// We emit a fake statement in "oas", so make sure that nothing can be inserted in between.
+	if curBlock.extendable {
+		panic("bad")
+	}
+	switch choice("empty", "inc", "assign", "oas", "send", "expr") {
+	case "empty":
+		return ""
+	case "inc":
+		return F("%v %v", lvalue(atype(ClassNumeric)), choice("--", "++"))
+	case "assign":
+		list := atypeList(TraitAny)
+		return F("%v = %v", fmtLvalueList(list), fmtRvalueList(list))
+	case "oas":
+		if !oas {
+			return ""
+		}
+		list := atypeList(TraitAny)
+		str, vars := fmtOasVarList(list)
+		if newVars != nil {
+			*newVars = vars
+		}
+		res := F("%v := %v", str, fmtRvalueList(list))
+		line("")
+		for _, v := range vars {
+			defineVar(v.id, v.typ)
+		}
+		return res
+	case "send":
+		t := atype(TraitSendable)
+		return F("%v <- %v", rvalue(t), rvalue(t.ktyp))
+	case "expr":
+		return ""
+	default:
+		panic("bad")
+	}
 }
 
 func stmtSend() {
@@ -229,8 +306,14 @@ func stmtSwitchExpr() {
 		t = boolType
 	}
 	enterBlock(true)
+	enterBlock(true)
 	curBlock.isBreakable = true
-	line("switch %v {", cond)
+	var vars []*Var
+	if rndBool() {
+		line("switch %v {", cond)
+	} else {
+		line("switch %v; %v {", stmtSimple(true, &vars), cond)
+	}
 	// TODO: we generate at most one case, because if we generate more,
 	// we can generate two cases with equal constants.
 	fallth := false
@@ -244,12 +327,17 @@ func stmtSwitchExpr() {
 			line("fallthrough")
 		}
 	}
-	if fallth || rndBool() {
+	if fallth || len(vars) > 0 || rndBool() {
 		enterBlock(true)
 		line("default:")
 		genBlock()
+		for _, v := range vars {
+			line("_ = %v", v.id)
+			v.used = true
+		}
 		leaveBlock()
 	}
+	leaveBlock()
 	line("}")
 	leaveBlock()
 }

@@ -13,10 +13,10 @@ const (
 	NPackages = 3
 	NFiles    = 3
 
-	NStatements     = 20
-	NExprDepth      = 6
-	NExprCount      = 15
-	NTotalExprCount = 500
+	NStatements     = 10
+	NExprDepth      = 4
+	NExprCount      = 10
+	NTotalExprCount = 50
 
 /*
 	NStatements     = 50
@@ -61,6 +61,7 @@ type Var struct {
 	id    string
 	typ   *Type
 	block *Block
+	used  bool
 }
 
 type Const struct {
@@ -86,6 +87,7 @@ var (
 	intType         *Type
 	byteType        *Type
 	efaceType       *Type
+	runeType        *Type
 	statements      []func()
 	expressions     []func(res *Type) string
 )
@@ -310,7 +312,7 @@ func types() []*Type {
 }
 
 func defineVar(id string, t *Type) {
-	v := &Var{id: id, typ: t}
+	v := &Var{id: id, typ: t, block: curBlock}
 	b := curBlock.sub[curBlockPos]
 	b.vars = append(b.vars, v)
 }
@@ -433,7 +435,9 @@ func enterBlock(nonextendable bool) {
 func leaveBlock() {
 	for _, b := range curBlock.sub {
 		for _, v := range b.vars {
-			line("_ = %v", v.id)
+			if !v.used {
+				line("_ = %v", v.id)
+			}
 		}
 	}
 
