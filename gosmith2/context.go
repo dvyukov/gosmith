@@ -156,7 +156,7 @@ func genToplevFunction(pi int, f *Func) {
 	argIds := make([]string, len(f.args))
 	argStr := ""
 	for i, a := range f.args {
-		argIds[i] = newId()
+		argIds[i] = newId("param")
 		if i != 0 {
 			argStr += ", "
 		}
@@ -308,7 +308,7 @@ func defineType(t *Type) {
 func materializeVar(t *Type) string {
 	// TODO: reset exprDepth and friends
 	// TODO: generate var in another package
-	id := newId()
+	id := newId("var")
 	if true {
 		curBlock0 := curBlock
 		curBlockPos0 := curBlockPos
@@ -383,7 +383,7 @@ func materializeVar(t *Type) string {
 }
 
 func materializeFunc(res *Type) *Func {
-	f := &Func{name: newId(), args: atypeList(TraitGlobal), rets: []*Type{res}}
+	f := &Func{name: newId("func"), args: atypeList(TraitGlobal), rets: []*Type{res}}
 
 	curBlock0 := curBlock
 	curBlockPos0 := curBlockPos
@@ -409,9 +409,9 @@ func choice(ch ...string) string {
 	return ch[rnd(len(ch))]
 }
 
-func newId() string {
+func newId(prefix string) string {
 	idSeq++
-	return fmt.Sprintf("id%v", idSeq)
+	return fmt.Sprintf("%v%v", prefix, idSeq)
 }
 
 func enterBlock(nonextendable bool) {

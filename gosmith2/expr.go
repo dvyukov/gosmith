@@ -47,11 +47,14 @@ func rvalue(t *Type) string {
 }
 
 func lvalue(t *Type) string {
-	switch choice("var", "index", "deref") {
+	switch choice("var", "indexSlice", "indexArray", "deref") {
 	case "var":
 		return exprVar(t)
-	case "index":
+	case "indexSlice":
 		return exprIndexSlice(t)
+	case "indexArray":
+		// TODO: index by lvalue to pass bounds check
+		return F("(%v)[%v]", lvalue(arrayOf(t)), lvalue(intType))
 	case "deref":
 		return exprDeref(t)
 	default:
@@ -95,6 +98,15 @@ func exprVar(res *Type) string {
 }
 
 func exprSelectorField(res *Type) string {
+	for i := 0; i < 10; i++ {
+		st := atype(ClassStruct)
+		for _, e := range st.elems {
+			if e.typ == res {
+				println("found struct on iter", i, "type", res.id)
+				return F("(%v).%v", rvalue(st), e.id)
+			}
+		}
+	}
 	return ""
 }
 
@@ -276,7 +288,8 @@ func exprIndexString(ret *Type) string {
 
 func exprIndexArray(ret *Type) string {
 	// TODO: also handle indexing of pointers to arrays
-	return ""
+	// TODO: index by lvalue to pass bounds check
+	return F("(%v)[%v]", rvalue(arrayOf(ret)), lvalue(intType))
 }
 
 func exprIndexMap(ret *Type) string {

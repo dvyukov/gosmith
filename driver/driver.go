@@ -60,6 +60,7 @@ var (
 		// bad:
 		regexp.MustCompile("fatal error: slice capacity smaller than length"),
 		regexp.MustCompile("copyabletopsegment"),
+    regexp.MustCompile("runtime.gostartcallfn"),
 		// ssa interp:
 		regexp.MustCompile("ssa/interp\\.\\(\\*frame\\)\\.runDefers"),
 	}
@@ -69,6 +70,7 @@ func init() {
 	knownBuildBugs["gc"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
 		regexp.MustCompile("fallthrough statement out of place"),
+    regexp.MustCompile("internal compiler error: walkexpr: switch 1 unknown op ASOP"),
 	}
 	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{}
 	knownBuildBugs["gc.386"] = []*regexp.Regexp{}

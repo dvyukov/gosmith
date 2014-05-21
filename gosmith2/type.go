@@ -38,8 +38,9 @@ type Type struct {
 	ktyp    *Type   // map key, chan elem, array elem, slice elem, pointee type
 	vtyp    *Type   // map val
 	utyp    *Type   // underlying type
-	styp    []*Type // struct elements, function arguments
+	styp    []*Type // function arguments
 	rtyp    []*Type // function return values
+	elems   []*Var  // struct fileds and interface methods
 	literal func() string
 
 	// TODO: cache types
@@ -113,35 +114,34 @@ func atype(trait TypeClass) *Type {
 func typeLit() *Type {
 	switch choice("array", "chan", "struct", "pointer", "interface", "slice", "function", "map") {
 	case "array":
-		elem := atype(TraitAny)
-		size := rnd(3)
-		return &Type{
-			id:    F("[%v]%v", size, elem.id),
-			class: ClassArray,
-			ktyp:  elem,
-			literal: func() string {
-				var buf bytes.Buffer
-				fmt.Fprintf(&buf, "[%v]%v{", size, elem.id)
-				for i := 0; i < size; i++ {
-					if i != 0 {
-						fmt.Fprintf(&buf, ",")
-					}
-					fmt.Fprintf(&buf, "%v", rvalue(elem))
-				}
-				fmt.Fprintf(&buf, "}")
-				return buf.String()
-			}}
+		return arrayOf(atype(TraitAny))
 	case "chan":
 		return chanOf(atype(TraitAny))
 	case "struct":
-		return nil
+		var elems []*Var
+		var buf bytes.Buffer
+		fmt.Fprintf(&buf, "struct { ")
+		for rndBool() {
+			e := &Var{id: newId("field"), typ: atype(TraitAny)}
+			elems = append(elems, e)
+			fmt.Fprintf(&buf, "%v %v\n", e.id, e.typ.id)
+		}
+		fmt.Fprintf(&buf, "}")
+		return &Type{
+			id:    buf.String(),
+			class: ClassStruct,
+			elems: elems,
+			literal: func() string {
+				return F("%v{}", buf.String())
+			},
+		}
 	case "pointer":
 		return pointerTo(atype(TraitAny))
 	case "interface":
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, "interface { ")
 		for rndBool() {
-			fmt.Fprintf(&buf, " %v %v %v\n", newId(), fmtTypeList(atypeList(TraitAny), true), fmtTypeList(atypeList(TraitAny), false))
+			fmt.Fprintf(&buf, " %v %v %v\n", newId("method"), fmtTypeList(atypeList(TraitAny), true), fmtTypeList(atypeList(TraitAny), false))
 		}
 		fmt.Fprintf(&buf, "}")
 		return &Type{
@@ -210,8 +210,20 @@ func satisfiesTrait(t *Type, trait TypeClass) bool {
 	case TraitSendable:
 		return t.class == ClassChan
 	case TraitHashable:
-		return t.class != ClassFunction && t.class != ClassMap && t.class != ClassSlice &&
-			(t.class != ClassArray || satisfiesTrait(t.ktyp, TraitHashable))
+		if t.class == ClassFunction || t.class == ClassMap || t.class == ClassSlice {
+			return false
+		}
+		if t.class == ClassArray && !satisfiesTrait(t.ktyp, TraitHashable) {
+			return false
+		}
+		if t.class == ClassStruct {
+			for _, e := range t.elems {
+				if !satisfiesTrait(e.typ, TraitHashable) {
+					return false
+				}
+			}
+		}
+		return true
 	case TraitPrintable:
 		return t.class == ClassBoolean || t.class == ClassNumeric || t.class == ClassString ||
 			t.class == ClassPointer || t.class == ClassInterface
@@ -274,6 +286,26 @@ func sliceOf(elem *Type) *Type {
 		}}
 }
 
+func arrayOf(elem *Type) *Type {
+	size := rnd(3)
+	return &Type{
+		id:    F("[%v]%v", size, elem.id),
+		class: ClassArray,
+		ktyp:  elem,
+		literal: func() string {
+			var buf bytes.Buffer
+			fmt.Fprintf(&buf, "[%v]%v{", size, elem.id)
+			for i := 0; i < size; i++ {
+				if i != 0 {
+					fmt.Fprintf(&buf, ",")
+				}
+				fmt.Fprintf(&buf, "%v", rvalue(elem))
+			}
+			fmt.Fprintf(&buf, "}")
+			return buf.String()
+		}}
+}
+
 func dependsOn(t, t0 *Type) bool {
 	if t == nil {
 		return false
@@ -301,6 +333,11 @@ func dependsOn(t, t0 *Type) bool {
 	}
 	for _, t1 := range t.rtyp {
 		if dependsOn(t1, t0) {
+			return true
+		}
+	}
+	for _, e := range t.elems {
+		if dependsOn(e.typ, t0) {
 			return true
 		}
 	}

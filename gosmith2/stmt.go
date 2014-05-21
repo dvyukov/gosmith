@@ -35,7 +35,7 @@ func genStatement() {
 }
 
 func stmtOas() {
-	id := newId()
+	id := newId("var")
 	t := atype(TraitAny)
 	line("%v := %v", id, rvalue(t))
 	defineVar(id, t)
@@ -89,12 +89,12 @@ func stmtFor() {
 			case "two":
 				line("for %v, %v = range %v {", lvalue(intType), lvalue(t), s)
 			case "oneDecl":
-				id := newId()
+				id := newId("var")
 				line("for %v := range %v {", id, s)
 				vars = append(vars, &Var{id: id, typ: intType})
 			case "twoDecl":
-				id := newId()
-				id2 := newId()
+				id := newId("var")
+				id2 := newId("var")
 				line("for %v, %v := range %v {", id, id2, s)
 				vars = append(vars, &Var{id: id, typ: intType})
 				vars = append(vars, &Var{id: id2, typ: t})
@@ -140,8 +140,8 @@ func stmtRecv() {
 	case "normal":
 		line("%v, %v = <-%v", lvalue(t.ktyp), lvalue(boolType), ch)
 	case "decl":
-		vv := newId()
-		ok := newId()
+		vv := newId("var")
+		ok := newId("var")
 		line("%v, %v := <-%v", vv, ok, ch)
 		defineVar(vv, t.ktyp)
 		defineVar(ok, boolType)
@@ -151,7 +151,7 @@ func stmtRecv() {
 }
 
 func stmtTypeDecl() {
-	id := newId()
+	id := newId("type")
 	t := atype(TraitAny)
 	line("type %v %v", id, t.id)
 
@@ -181,12 +181,12 @@ func stmtSelect() {
 			case "two":
 				line("case %v, %v = <-%v:", lvalue(elem), lvalue(boolType), ch)
 			case "oneDecl":
-				vv := newId()
+				vv := newId("var")
 				line("case %v := <-%v:", vv, ch)
 				defineVar(vv, elem)
 			case "twoDecl":
-				vv := newId()
-				ok := newId()
+				vv := newId("var")
+				ok := newId("var")
 				line("case %v, %v := <-%v:", vv, ok, ch)
 				defineVar(vv, elem)
 				defineVar(ok, boolType)
