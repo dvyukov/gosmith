@@ -72,7 +72,7 @@ func init() {
 	knownBuildBugs["gc"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
 		regexp.MustCompile("fallthrough statement out of place"),
-		// regexp.MustCompile("internal compiler error: walkexpr: switch 1 unknown op ASOP"),
+		regexp.MustCompile("internal compiler error: out of fixed registers"),
 		regexp.MustCompile("internal compiler error: fault"), // https://code.google.com/p/go/issues/detail?id=8058
 	}
 	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{}
@@ -167,6 +167,14 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
+	if enabled("nacl") && t.Build("gc", "amd64p32", false) {
+		t.keep = true
+		return
+	}
+	if enabled("nacl") && enabled("exec") && t.Exec("gc", "amd64p32", false) {
+		t.keep = true
+		return
+	}
 	if enabled("race") && t.Build("gc", "amd64", true) {
 		t.keep = true
 		return
@@ -229,6 +237,9 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 	args = append(args, "main")
 	cmd := exec.Command("go", args...)
 	cmd.Env = []string{"GOARCH=" + goarch, "GOPATH=" + t.gopath}
+	if goarch == "amd64p32" {
+		cmd.Env = append(cmd.Env, "GOOS=nacl")
+	}
 	cmd.Env = append(cmd.Env, os.Environ()...)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -268,6 +279,9 @@ func (t *Test) Exec(compiler, goarch string, race bool) bool {
 		return false
 	}
 	cmd := exec.Command(outbin)
+	if goarch == "amd64p32" {
+		cmd = exec.Command("bash", "go_nacl_amd64p32_exec", outbin)
+	}
 	cmd.Env = []string{"GOMAXPROCS=2", "GOGC=0"}
 	cmd.Env = append(cmd.Env, os.Environ()...)
 	out, err := cmd.CombinedOutput()

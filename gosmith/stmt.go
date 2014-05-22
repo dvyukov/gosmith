@@ -185,7 +185,9 @@ func stmtSimple(oas bool, newVars *[]*Var) string {
 	if curBlock.extendable {
 		panic("bad")
 	}
-	switch choice("empty", "inc", "assign", "oas", "send", "expr") {
+	// "send" crashes gccgo with random errors too frequently.
+	// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61273
+	switch choice("empty", "inc", "assign", "oas" /*"send",*/, "expr") {
 	case "empty":
 		return ""
 	case "inc":
