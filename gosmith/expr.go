@@ -31,7 +31,7 @@ func expression(res *Type) string {
 	exprCount++
 	totalExprCount++
 	if exprDepth >= NExprDepth || exprCount >= NExprCount || totalExprCount >= NTotalExprCount {
-		return exprLiteral(res)
+		return res.literal()
 	}
 	for {
 		exprDepth++
@@ -132,6 +132,9 @@ func fmtOasVarList(list []*Type) (str string, newVars []*Var) {
 }
 
 func exprLiteral(res *Type) string {
+	if res.complexLiteral != nil {
+		return res.complexLiteral()
+	}
 	return res.literal()
 }
 

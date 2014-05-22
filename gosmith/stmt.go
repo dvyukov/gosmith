@@ -17,6 +17,7 @@ func initStatements() {
 		stmtSwitchExpr,
 		stmtSwitchType,
 		stmtTypeDecl,
+		stmtVarDecl,
 		stmtCall,
 		stmtReturn,
 		stmtBreak,
@@ -253,7 +254,19 @@ func stmtTypeDecl() {
 	newTyp.literal = func() string {
 		return F("%v(%v)", id, t.literal())
 	}
+	if t.complexLiteral != nil {
+		newTyp.complexLiteral = func() string {
+			return F("%v(%v)", id, t.complexLiteral())
+		}
+	}
 	defineType(newTyp)
+}
+
+func stmtVarDecl() {
+	id := newId("Var")
+	t := atype(TraitAny)
+	line("var %v %v = %v", id, t.id, rvalue(t))
+	defineVar(id, t)
 }
 
 func stmtSelect() {

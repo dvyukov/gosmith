@@ -33,15 +33,16 @@ const (
 )
 
 type Type struct {
-	id      string
-	class   TypeClass
-	ktyp    *Type   // map key, chan elem, array elem, slice elem, pointee type
-	vtyp    *Type   // map val
-	utyp    *Type   // underlying type
-	styp    []*Type // function arguments
-	rtyp    []*Type // function return values
-	elems   []*Var  // struct fileds and interface methods
-	literal func() string
+	id             string
+	class          TypeClass
+	ktyp           *Type   // map key, chan elem, array elem, slice elem, pointee type
+	vtyp           *Type   // map val
+	utyp           *Type   // underlying type
+	styp           []*Type // function arguments
+	rtyp           []*Type // function return values
+	elems          []*Var  // struct fileds and interface methods
+	literal        func() string
+	complexLiteral func() string
 
 	// TODO: cache types
 	// pointerTo *Type
@@ -65,12 +66,20 @@ func initTypes() {
 	for _, t := range predefinedTypes {
 		t.utyp = t
 	}
+
 	stringType = predefinedTypes[0]
 	boolType = predefinedTypes[1]
 	intType = predefinedTypes[2]
 	byteType = predefinedTypes[3]
 	efaceType = predefinedTypes[4]
 	runeType = predefinedTypes[5]
+
+	stringType.complexLiteral = func() string {
+		if rndBool() {
+			return `"\u65e5本\U00008a9e"`
+		}
+		return "`\u65e5本\U00008a9e\x0a\x0d`"
+	}
 }
 
 func fmtTypeList(list []*Type, parens bool) string {
@@ -296,17 +305,29 @@ func arrayOf(elem *Type) *Type {
 		class: ClassArray,
 		ktyp:  elem,
 		literal: func() string {
-			var buf bytes.Buffer
-			fmt.Fprintf(&buf, "[%v]%v{", size, elem.id)
-			for i := 0; i < size; i++ {
-				if i != 0 {
-					fmt.Fprintf(&buf, ",")
+			return F("[%v]%v{}", size, elem.id)
+		},
+		complexLiteral: func() string {
+			switch choice("normal", "keyed") {
+			case "normal":
+				var buf bytes.Buffer
+				fmt.Fprintf(&buf, "[%v]%v{", choice(F("%v", size), "..."), elem.id)
+				for i := 0; i < size; i++ {
+					if i != 0 {
+						fmt.Fprintf(&buf, ",")
+					}
+					fmt.Fprintf(&buf, "%v", rvalue(elem))
 				}
-				fmt.Fprintf(&buf, "%v", rvalue(elem))
+				fmt.Fprintf(&buf, "}")
+				return buf.String()
+			case "keyed":
+				// TODO: implement
+				return F("[%v]%v{}", size, elem.id)
+			default:
+				panic("bad")
 			}
-			fmt.Fprintf(&buf, "}")
-			return buf.String()
-		}}
+		},
+	}
 }
 
 func dependsOn(t, t0 *Type) bool {
