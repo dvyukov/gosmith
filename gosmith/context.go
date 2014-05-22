@@ -403,6 +403,40 @@ func materializeFunc(res *Type) *Func {
 	return f
 }
 
+func materializeGotoLabel() string {
+	// TODO: move lavel up
+	id := newId("Label")
+
+	curBlock0 := curBlock
+	curBlockPos0 := curBlockPos
+	curBlockLen0 := len(curBlock.sub)
+	defer func() {
+		if curBlock == curBlock0 {
+			curBlockPos0 += len(curBlock.sub) - curBlockLen0
+		}
+		curBlock = curBlock0
+		curBlockPos = curBlockPos0
+	}()
+
+	for {
+		if curBlock.parent.parent.parent.parent == nil && curBlockPos <= 0 {
+			break
+		}
+		if !curBlock.extendable || curBlockPos < 0 {
+			curBlock = curBlock.parent
+			curBlockPos = len(curBlock.sub) - 2
+			continue
+		}
+		if rnd(3) == 0 {
+			break
+		}
+		curBlockPos--
+	}
+
+	line("%v:", id)
+	return id
+}
+
 func rnd(n int) int {
 	return rand.Intn(n)
 }

@@ -21,6 +21,7 @@ func initStatements() {
 		stmtReturn,
 		stmtBreak,
 		stmtContinue,
+		stmtGoto,
 		stmtSink,
 	}
 }
@@ -410,6 +411,13 @@ func stmtContinue() {
 	line("continue")
 }
 
+func stmtGoto() {
+	// TODO: suppport goto down
+	id := materializeGotoLabel()
+	line("goto %v", id)
+}
+
 func stmtSink() {
+	// Makes var escape.
 	line("SINK = %v", exprVar(atype(TraitAny)))
 }

@@ -23,6 +23,7 @@ func initExpressions() {
 		exprIndexArray,
 		exprIndexString,
 		exprIndexMap,
+		exprConversion,
 	}
 }
 
@@ -47,18 +48,30 @@ func rvalue(t *Type) string {
 }
 
 func lvalue(t *Type) string {
-	switch choice("var", "indexSlice", "indexArray", "deref") {
-	case "var":
-		return exprVar(t)
-	case "indexSlice":
-		return exprIndexSlice(t)
-	case "indexArray":
-		// TODO: index by lvalue to pass bounds check
-		return F("(%v)[%v]", lvalue(arrayOf(t)), lvalue(intType))
-	case "deref":
-		return exprDeref(t)
-	default:
-		panic("bad")
+	for {
+		switch choice("var", "indexSlice", "indexArray", "selector", "deref") {
+		case "var":
+			return exprVar(t)
+		case "indexSlice":
+			return exprIndexSlice(t)
+		case "indexArray":
+			// TODO: index by lvalue to pass bounds check
+			return F("(%v)[%v]", lvalue(arrayOf(t)), lvalue(intType))
+		case "selector":
+			for i := 0; i < 10; i++ {
+				st := atype(ClassStruct)
+				for _, e := range st.elems {
+					if e.typ == t {
+						return F("(%v).%v", lvalue(st), e.id)
+					}
+				}
+			}
+			continue
+		case "deref":
+			return exprDeref(t)
+		default:
+			panic("bad")
+		}
 	}
 }
 
@@ -310,14 +323,16 @@ func exprIndexSlice(ret *Type) string {
 }
 
 func exprIndexString(ret *Type) string {
-	// TODO: currently generates too many out-of-bounds errors for string literals
-	if true {
-		return ""
-	}
 	if ret != byteType {
 		return ""
 	}
-	return F("(%v)[%v]", rvalue(stringType), rvalue(intType))
+	s := rvalue(stringType)
+	if s[0] == '"' {
+		// Use lvalue for index to prevent out-of-bounds errors for string literals.
+		return F("(%v)[%v]", s, lvalue(intType))
+	} else {
+		return F("(%v)[%v]", s, rvalue(intType))
+	}
 }
 
 func exprIndexArray(ret *Type) string {
@@ -327,5 +342,40 @@ func exprIndexArray(ret *Type) string {
 }
 
 func exprIndexMap(ret *Type) string {
+	// TODO: figure out something better
+	for i := 0; i < 10; i++ {
+		t := atype(ClassMap)
+		if t.vtyp == ret {
+			return F("(%v)[%v]", rvalue(t), rvalue(t.ktyp))
+		}
+	}
+	return ""
+}
+
+func exprConversion(ret *Type) string {
+	if ret.class == ClassNumeric {
+		return F("(%v)(%v)", ret.id, rvalue(atype(ClassNumeric)))
+	}
+	if ret == stringType {
+		switch choice("int", "byteSlice", "runeSlice") {
+		case "int":
+			// We produce a string of length at least 3, to not produce
+			// "invalid string index 1 (out of bounds for 1-byte string)"
+			return F("(%v)((%v) + (1<<24))", ret.id, rvalue(intType))
+		case "byteSlice":
+			return F("(%v)(%v)", ret.id, rvalue(sliceOf(byteType)))
+		case "runeSlice":
+			return F("(%v)(%v)", ret.id, rvalue(sliceOf(runeType)))
+		default:
+			panic("bad")
+		}
+	}
+	if ret.class == ClassSlice && (ret.ktyp == byteType || ret.ktyp == runeType) {
+		return F("(%v)(%v)", ret.id, rvalue(stringType))
+	}
+	// TODO: handle "x is assignable to T"
+	// TODO: handle "x's type and T have identical underlying types"
+	// TODO: handle "x's type and T are unnamed pointer types and their pointer base types have identical underlying types"
+	// TODO: handle "x's type and T are both complex types"
 	return ""
 }

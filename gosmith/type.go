@@ -58,7 +58,8 @@ func initTypes() {
 		&Type{id: "uint", class: ClassNumeric, literal: func() string { return "uint(1)" }},
 		&Type{id: "uintptr", class: ClassNumeric, literal: func() string { return "uintptr(0)" }},
 		&Type{id: "int16", class: ClassNumeric, literal: func() string { return "int16(1)" }},
-		&Type{id: "float64", class: ClassNumeric, literal: func() string { return "1.1" }},
+		&Type{id: "float64", class: ClassNumeric, literal: func() string { return "1.0" }},
+		&Type{id: "float32", class: ClassNumeric, literal: func() string { return "float32(1.0)" }},
 		&Type{id: "error", class: ClassInterface, literal: func() string { return "error(nil)" }},
 	}
 	for _, t := range predefinedTypes {
