@@ -56,8 +56,13 @@ var (
 		regexp.MustCompile("panic: runtime error: slice bounds out of range"),
 		regexp.MustCompile("panic: runtime error: invalid memory address or nil pointer dereference"),
 		regexp.MustCompile("fatal error: all goroutines are asleep - deadlock!"),
-		regexp.MustCompile("SIGABRT: abort"),
-		regexp.MustCompile("Aborted"),
+		regexp.MustCompile("SIGABRT: abort"), // gc
+		regexp.MustCompile("Aborted"),        // gccgo
+		// nacl:
+		regexp.MustCompile("Signal 6 from trusted code"),
+		regexp.MustCompile("Signal 11 from trusted code"),
+		regexp.MustCompile("Signal 6 from untrusted code"),
+		regexp.MustCompile("Signal 11 from untrusted code"),
 		// bad:
 		regexp.MustCompile("fatal error: slice capacity smaller than length"),
 		regexp.MustCompile("copyabletopsegment"),
@@ -79,6 +84,7 @@ func init() {
 		regexp.MustCompile("cannot take the address of"),
 		regexp.MustCompile("internal compiler error: out of fixed registers"),
 		regexp.MustCompile("internal compiler error: fault"), // https://code.google.com/p/go/issues/detail?id=8058
+		regexp.MustCompile("index out of bounds"),  // currently gosmith can generate out-of-bounds with constant index
 	}
 	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{}
 	knownBuildBugs["gc.386"] = []*regexp.Regexp{}
@@ -98,6 +104,7 @@ func init() {
 		regexp.MustCompile("error: argument 2 has incompatible type"),
 		regexp.MustCompile("__normal_iterator"),
 		regexp.MustCompile("Unsafe_type_conversion_expression::do_get_backend"),
+		regexp.MustCompile("index out of bounds"),  // currently gosmith can generate out-of-bounds with constant index
 	}
 }
 
