@@ -110,8 +110,10 @@ func initProgram() {
 		&Func{name: "init", args: []*Type{}, rets: []*Type{}},
 		&Func{name: "main", args: []*Type{}, rets: []*Type{}},
 	}
-	packages[1] = newPackage("a")
-	packages[2] = newPackage("b")
+	if !*singlepkg {
+		packages[1] = newPackage("a")
+		packages[2] = newPackage("b")
+	}
 }
 
 func newPackage(name string) *Package {
@@ -126,6 +128,9 @@ func genPackage(pi int) {
 	totalExprCount = 0
 
 	p := packages[pi]
+	if p == nil {
+		return
+	}
 	for len(p.undefFuncs) != 0 || len(p.undefVars) != 0 {
 		if len(p.undefFuncs) != 0 {
 			f := p.undefFuncs[len(p.undefFuncs)-1]
@@ -211,6 +216,9 @@ func genBlock() {
 
 func serializeProgram(dir string) {
 	for _, p := range packages {
+		if p == nil {
+			continue
+		}
 		path := filepath.Join(dir, "src", p.name)
 		os.MkdirAll(path, os.ModePerm)
 		files := [NFiles]*bufio.Writer{}
@@ -233,18 +241,12 @@ func serializeProgram(dir string) {
 			}
 			if i == 0 && p.name == "main" {
 				fmt.Fprintf(w, "import \"runtime\"\n")
-				fmt.Fprintf(w, "import \"time\"\n")
-				fmt.Fprintf(w, "import \"os\"\n")
 				fmt.Fprintf(w, "func init() {\n")
 				fmt.Fprintf(w, "	go func() {\n")
 				fmt.Fprintf(w, "		for {\n")
 				fmt.Fprintf(w, "			runtime.GC()\n")
 				fmt.Fprintf(w, "			runtime.Gosched()\n")
 				fmt.Fprintf(w, "		}\n")
-				fmt.Fprintf(w, "	}()\n")
-				fmt.Fprintf(w, "	go func() {\n")
-				fmt.Fprintf(w, "		time.Sleep(3 * time.Second)\n")
-				fmt.Fprintf(w, "		os.Exit(0)\n")
 				fmt.Fprintf(w, "	}()\n")
 				fmt.Fprintf(w, "}\n")
 			}
@@ -364,7 +366,7 @@ loop:
 	}
 	if curBlock.parent == nil {
 		for i := curPackage; i < NPackages; i++ {
-			if rndBool() || i == NPackages-1 {
+			if rndBool() || i == NPackages-1 || *singlepkg {
 				if i == curPackage {
 					// emit global var into the current package
 					enterBlock(true)

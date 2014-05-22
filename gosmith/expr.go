@@ -354,24 +354,24 @@ func exprIndexMap(ret *Type) string {
 
 func exprConversion(ret *Type) string {
 	if ret.class == ClassNumeric {
-		return F("(%v)(%v)", ret.id, rvalue(atype(ClassNumeric)))
+		return F("(%v)(%v %v)", ret.id, rvalue(atype(ClassNumeric)), choice("", ","))
 	}
 	if ret == stringType {
 		switch choice("int", "byteSlice", "runeSlice") {
 		case "int":
 			// We produce a string of length at least 3, to not produce
 			// "invalid string index 1 (out of bounds for 1-byte string)"
-			return F("(%v)((%v) + (1<<24))", ret.id, rvalue(intType))
+			return F("(%v)((%v) + (1<<24) %v)", ret.id, rvalue(intType), choice("", ","))
 		case "byteSlice":
-			return F("(%v)(%v)", ret.id, rvalue(sliceOf(byteType)))
+			return F("(%v)(%v %v)", ret.id, rvalue(sliceOf(byteType)), choice("", ","))
 		case "runeSlice":
-			return F("(%v)(%v)", ret.id, rvalue(sliceOf(runeType)))
+			return F("(%v)(%v %v)", ret.id, rvalue(sliceOf(runeType)), choice("", ","))
 		default:
 			panic("bad")
 		}
 	}
 	if ret.class == ClassSlice && (ret.ktyp == byteType || ret.ktyp == runeType) {
-		return F("(%v)(%v)", ret.id, rvalue(stringType))
+		return F("(%v)(%v %v)", ret.id, rvalue(stringType), choice("", ","))
 	}
 	// TODO: handle "x is assignable to T"
 	// TODO: handle "x's type and T have identical underlying types"

@@ -31,12 +31,13 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
 var (
 	parallelism = flag.Int("p", runtime.NumCPU(), "number of parallel tests")
-	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,race,gccgo,ssa,gofmt,exec)")
+	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,nacl,race,gccgo,llgo,ssa,gofmt,exec)")
 	workDir     = flag.String("workdir", "./work", "working directory for temp files")
 
 	statTotal   uint64
@@ -47,22 +48,24 @@ var (
 	statKnown   uint64
 
 	knownBuildBugs   = make(map[string][]*regexp.Regexp)
-	knownSsadumpBugs = []*regexp.Regexp{
-	//regexp.MustCompile("constant .* overflows"),
-	}
-	knownExecBugs = []*regexp.Regexp{
+	knownSsadumpBugs = []*regexp.Regexp{}
+	knownExecBugs    = []*regexp.Regexp{
 		regexp.MustCompile("^panic: "),
 		regexp.MustCompile("panic: runtime error: go of nil func value"),
 		regexp.MustCompile("panic: runtime error: index out of range"),
 		regexp.MustCompile("panic: runtime error: slice bounds out of range"),
 		regexp.MustCompile("panic: runtime error: invalid memory address or nil pointer dereference"),
 		regexp.MustCompile("fatal error: all goroutines are asleep - deadlock!"),
+		regexp.MustCompile("SIGABRT: abort"),
+		regexp.MustCompile("Aborted"),
 		// bad:
 		regexp.MustCompile("fatal error: slice capacity smaller than length"),
 		regexp.MustCompile("copyabletopsegment"),
 		regexp.MustCompile("scanbitvector"),
 		regexp.MustCompile("runtime.gostartcallfn"),
-		regexp.MustCompile("__go_map_delete"),
+		regexp.MustCompile("__go_map_delete"),                       // gccgo
+		regexp.MustCompile("fatal error: runtime_lock: lock count"), // gccgo
+		regexp.MustCompile("fatal error: stopm holding locks"),      // gccgo
 		// ssa interp:
 		regexp.MustCompile("ssa/interp\\.\\(\\*frame\\)\\.runDefers"),
 	}
@@ -71,7 +74,9 @@ var (
 func init() {
 	knownBuildBugs["gc"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
+		regexp.MustCompile("internal compiler error: overflow: "),
 		regexp.MustCompile("fallthrough statement out of place"),
+		regexp.MustCompile("cannot take the address of"),
 		regexp.MustCompile("internal compiler error: out of fixed registers"),
 		regexp.MustCompile("internal compiler error: fault"), // https://code.google.com/p/go/issues/detail?id=8058
 	}
@@ -191,6 +196,14 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
+	if enabled("llgo") && t.Build("llgo", "amd64", false) {
+		t.keep = true
+		return
+	}
+	if enabled("llgo") && enabled("exec") && t.Exec("llgo", "amd64", false) {
+		t.keep = true
+		return
+	}
 	if enabled("ssa") && t.Ssadump() {
 		t.keep = true
 		return
@@ -210,7 +223,13 @@ func enabled(what string) bool {
 }
 
 func (t *Test) generateSource() bool {
-	out, err := exec.Command("gosmith", "-seed", t.seed, "-dir", t.path).CombinedOutput()
+	args := []string{"-seed", t.seed, "-dir", t.path}
+	if *checkers == "all" || *checkers == "llgo" {
+		// llgo-build installs all packages that it build,
+		// so multiple packages per test won't work
+		args = append(args, "-singlepkg")
+	}
+	out, err := exec.Command("gosmith", args...).CombinedOutput()
 	if err != nil {
 		log.Printf("failed to execute gosmith for seed %v: %v\n%v\n", t.seed, err, string(out))
 		return false
@@ -230,18 +249,28 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 		typ += ".race"
 	}
 	outbin := filepath.Join(t.path, "bin"+typ)
-	args := []string{"build", "-o", outbin, "-compiler", compiler}
-	if race {
-		args = append(args, "-race")
+
+	command := ""
+	var args []string
+	if compiler == "llgo" {
+		command = "llgo-build"
+		args = []string{"-x" /*"-o", outbin,*/, "main"}
+	} else {
+		command = "go"
+		args = []string{"build", "-o", outbin, "-compiler", compiler}
+		if race {
+			args = append(args, "-race")
+		}
+		args = append(args, "main")
 	}
-	args = append(args, "main")
-	cmd := exec.Command("go", args...)
-	cmd.Env = []string{"GOARCH=" + goarch, "GOPATH=" + t.gopath}
+
+	cmd := exec.Command(command, args...)
+	cmd.Env = []string{"GOARCH=" + goarch, "GOPATH=" + t.gopath + ":" + os.Getenv("GOPATH")}
 	if goarch == "amd64p32" {
 		cmd.Env = append(cmd.Env, "GOOS=nacl")
 	}
 	cmd.Env = append(cmd.Env, os.Environ()...)
-	out, err := cmd.CombinedOutput()
+	out, err := runWithTimeout(cmd)
 	if err == nil {
 		return false
 	}
@@ -284,7 +313,7 @@ func (t *Test) Exec(compiler, goarch string, race bool) bool {
 	}
 	cmd.Env = []string{"GOMAXPROCS=2", "GOGC=0"}
 	cmd.Env = append(cmd.Env, os.Environ()...)
-	out, err := cmd.CombinedOutput()
+	out, err := runWithTimeout(cmd)
 	if err == nil {
 		return false
 	}
@@ -300,7 +329,7 @@ func (t *Test) Exec(compiler, goarch string, race bool) bool {
 		outf.Write(out)
 		outf.Close()
 	}
-	log.Printf("exec failed, seed %v\n", t.seed)
+	log.Printf("%v exec failed, seed %v\n", typ, t.seed)
 	atomic.AddUint64(&statExec, 1)
 	return true
 }
@@ -421,7 +450,8 @@ func (t *Test) GofmtFile(fname string) bool {
 	}
 
 	removeWs := func(r rune) rune {
-		if r == ' ' || r == '\t' || r == '\n' || r == '(' || r == ')' {
+		// Chars that gofmt can remove/shuffle.
+		if r == ' ' || r == '\t' || r == '\n' || r == '(' || r == ')' || r == ',' || r == ';' {
 			return -1
 		}
 		return r
@@ -458,4 +488,24 @@ func writeStrippedFile(fn string, data []byte) {
 		f.Write(data[i:end])
 		f.Write([]byte{'\n'})
 	}
+}
+
+func runWithTimeout(cmd *exec.Cmd) ([]byte, error) {
+	done := make(chan bool)
+	defer close(done)
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-time.After(10 * time.Second):
+		}
+		cmd.Process.Signal(syscall.SIGABRT)
+		select {
+		case <-done:
+			return
+		case <-time.After(5 * time.Second):
+		}
+		cmd.Process.Signal(syscall.SIGTERM)
+	}()
+	return cmd.CombinedOutput()
 }
