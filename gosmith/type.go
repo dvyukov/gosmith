@@ -400,40 +400,69 @@ func funcOf(alist, rlist []*Type) *Type {
 	}
 	t.complexLiteral = func() string {
 		return genFuncLit(t)
-		// return F("((func%v %v)(nil))", fmtTypeList(alist, true), fmtTypeList(rlist, false))
 	}
 	return t
 }
 
 func genFuncLit(ft *Type) string {
-	curToplevPos := len(packages[curPackage].top.sub)
-	curBlock0 := curBlock
-	curBlockPos0 := curBlockPos
+	if curBlockPos != -1 {
+		println("CUR", curBlock.sub[curBlockPos].str)
+	}
+	println("GENFUNC{{{", curBlock, len(curBlock.sub), curBlockPos)
+	defer func() {
+		println("GENFUNC}}}", curBlock, len(curBlock.sub), curBlockPos)
+	}()
+	//_ = bufio.Writer{}
+	//return F("((func%v %v)(nil))", fmtTypeList(ft.styp, true), fmtTypeList(ft.rtyp, false))
+	f := &Func{args: ft.styp, rets: ft.rtyp}
 	curFunc0 := curFunc
+	curFunc = f
+	curBlockPos0 := curBlockPos
 	exprDepth0 := exprDepth
 	exprCount0 := exprCount
 	exprDepth = 0
 	exprCount = 0
 	defer func() {
-		curBlock = curBlock0
-		curBlockPos = curBlockPos0
 		curFunc = curFunc0
 		exprDepth = exprDepth0
 		exprCount = exprCount0
+		curBlockPos = curBlockPos0
 	}()
-	f := &Func{args: ft.styp, rets: ft.rtyp}
-	// TODO: it must work in the current context to reference local vars
-	genToplevFunction(curPackage, f)
 
-	b := packages[curPackage].top.sub[curToplevPos]
-	packages[curPackage].top.sub[curToplevPos] = &Block{}
+	enterBlock(true)
+	enterBlock(true)
+	argIds := make([]string, len(f.args))
+	argStr := ""
+	for i, a := range f.args {
+		argIds[i] = newId("Param")
+		if i != 0 {
+			argStr += ", "
+		}
+		argStr += argIds[i] + " " + a.id
+	}
+	line("func(%v)%v {", argStr, fmtTypeList(f.rets, false))
+	for i, a := range f.args {
+		defineVar(argIds[i], a)
+	}
+	curBlock.funcBoundary = true
+	curBlock.isBreakable = false
+	curBlock.isContinuable = false
+	genBlock()
+	leaveBlock()
+	stmtReturn()
+	line("}")
+	leaveBlock()
+
+	b := curBlock.sub[curBlockPos]
+	copy(curBlock.sub[curBlockPos:], curBlock.sub[curBlockPos+1:])
+	curBlock.sub = curBlock.sub[:len(curBlock.sub)-1]
 
 	var buf bytes.Buffer
 	w := bufio.NewWriter(&buf)
 	serializeBlock(w, b, 0)
 	w.Flush()
 	s := buf.String()
-	fmt.Printf("GEN FUNC:\n%v\n", s)
+	//fmt.Printf("GEN FUNC:\n%v\n", s)
 	return s[:len(s)-1]
 }
 

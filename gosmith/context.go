@@ -1,3 +1,5 @@
+// 1398120132020256795
+
 package main
 
 import (
@@ -44,6 +46,7 @@ type Block struct {
 	extendable    bool
 	isBreakable   bool
 	isContinuable bool
+	funcBoundary  bool
 	sub           []*Block
 	consts        []*Const
 	types         []*Type
@@ -153,8 +156,10 @@ func line(f string, args ...interface{}) {
 	s := F(f, args...)
 	b := &Block{parent: curBlock, str: s}
 	if curBlockPos+1 == len(curBlock.sub) {
+		println("+LINE:", curBlock, s)
 		curBlock.sub = append(curBlock.sub, b)
 	} else {
+		println("<LINE:", curBlock, s)
 		curBlock.sub = append(curBlock.sub, nil)
 		copy(curBlock.sub[curBlockPos+2:], curBlock.sub[curBlockPos+1:])
 		curBlock.sub[curBlockPos+1] = b
@@ -188,6 +193,7 @@ func genToplevFunction(pi int, f *Func) {
 	for i, a := range f.args {
 		defineVar(argIds[i], a)
 	}
+	curBlock.funcBoundary = true
 	genBlock()
 	leaveBlock()
 	stmtReturn()
@@ -265,7 +271,7 @@ func serializeProgram(dir string) {
 }
 
 func serializeBlock(w *bufio.Writer, b *Block, d int) {
-	if true {
+	if false {
 		if b.str != "" {
 			w.WriteString(b.str)
 			w.WriteString("\n")
@@ -327,6 +333,10 @@ func defineType(t *Type) {
 func materializeVar(t *Type) string {
 	// TODO: generate var in another package
 	id := newId("Var")
+	println("MATER VAR {{{", id, curBlock, len(curBlock.sub), curBlockPos)
+	defer func() {
+		println("MATER VAR }}}", id, curBlock, len(curBlock.sub), curBlockPos)
+	}()
 	curBlock0 := curBlock
 	curBlockPos0 := curBlockPos
 	curBlockLen0 := len(curBlock.sub)
@@ -351,6 +361,7 @@ loop:
 		if !curBlock.extendable || curBlockPos < 0 {
 			curBlock = curBlock.parent
 			curBlockPos = len(curBlock.sub) - 2
+			println("MOVETO", id, curBlock, curBlockPos)
 			continue
 		}
 		if rnd(3) == 0 {
@@ -366,6 +377,7 @@ loop:
 		}
 		curBlockPos--
 	}
+	println("ENDUPAT", id, curBlock, curBlockPos)
 	if curBlock.parent == nil {
 		for i := curPackage; i < NPackages; i++ {
 			if rndBool() || i == NPackages-1 || *singlepkg {
@@ -410,7 +422,7 @@ func materializeFunc(res *Type) *Func {
 		exprCount = exprCount0
 	}()
 
-	if rndBool() && curPackage != NPackages-1 {
+	if rndBool() && !*singlepkg && curPackage != NPackages-1 {
 		if dependsOn(res, nil) {
 			goto thisPackage
 		}
@@ -448,7 +460,7 @@ func materializeGotoLabel() string {
 	}()
 
 	for {
-		if curBlock.parent.parent.parent.parent == nil && curBlockPos <= 0 {
+		if curBlock.parent.funcBoundary && curBlockPos <= 0 {
 			break
 		}
 		if !curBlock.extendable || curBlockPos < 0 {
