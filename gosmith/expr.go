@@ -78,7 +78,7 @@ trying:
 		case "recv":
 			res = exprRecv(t)
 		case "arith":
-			res = F("(%v) %v (%v)", lvalue(t), choice("+", "*"), lvalue(t))
+			res = F("(%v) %v (%v)", lvalue(t), choice("+", "*"), rvalue(t))
 		case "indexMap":
 			res = exprIndexMap(t)
 		case "conv":

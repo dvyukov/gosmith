@@ -145,28 +145,28 @@ func typeLit() *Type {
 			class: ClassStruct,
 			elems: elems,
 			literal: func() string {
-				return F("%v{}", id)
+				return F("(%v{})", id)
 			},
 			complexLiteral: func() string {
 				if rndBool() {
 					// unnamed
 					var buf bytes.Buffer
-					fmt.Fprintf(&buf, "%v{", id)
+					fmt.Fprintf(&buf, "(%v{", id)
 					for i := 0; i < len(elems); i++ {
 						fmt.Fprintf(&buf, "%v, ", rvalue(elems[i].typ))
 					}
-					fmt.Fprintf(&buf, "}")
+					fmt.Fprintf(&buf, "})")
 					return buf.String()
 				} else {
 					// named
 					var buf bytes.Buffer
-					fmt.Fprintf(&buf, "%v{", id)
+					fmt.Fprintf(&buf, "(%v{", id)
 					for i := 0; i < len(elems); i++ {
 						if rndBool() {
 							fmt.Fprintf(&buf, "%v: %v, ", elems[i].id, rvalue(elems[i].typ))
 						}
 					}
-					fmt.Fprintf(&buf, "}")
+					fmt.Fprintf(&buf, "})")
 					return buf.String()
 				}
 			},
@@ -177,7 +177,9 @@ func typeLit() *Type {
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, "interface { ")
 		for rndBool() {
-			fmt.Fprintf(&buf, " %v %v %v\n", newId("Method"), fmtTypeList(atypeList(TraitAny), true), fmtTypeList(atypeList(TraitAny), false))
+			fmt.Fprintf(&buf, " %v %v %v\n", newId("Method"),
+				fmtTypeList(atypeList(TraitAny), true),
+				fmtTypeList(atypeList(TraitAny), false))
 		}
 		fmt.Fprintf(&buf, "}")
 		return &Type{

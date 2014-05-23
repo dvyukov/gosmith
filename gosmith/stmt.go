@@ -251,12 +251,27 @@ func stmtTypeDecl() {
 	newTyp := new(Type)
 	*newTyp = *t
 	newTyp.id = id
-	newTyp.literal = func() string {
-		return F("%v(%v)", id, t.literal())
-	}
-	if t.complexLiteral != nil {
+	if t.class == ClassStruct {
+		newTyp.literal = func() string {
+			// replace struct name with new type id
+			l := t.literal()
+			l = l[len(t.id)+1:]
+			return "(" + id + l
+		}
 		newTyp.complexLiteral = func() string {
-			return F("%v(%v)", id, t.complexLiteral())
+			// replace struct name with new type id
+			l := t.complexLiteral()
+			l = l[len(t.id)+1:]
+			return "(" + id + l
+		}
+	} else {
+		newTyp.literal = func() string {
+			return F("%v(%v)", id, t.literal())
+		}
+		if t.complexLiteral != nil {
+			newTyp.complexLiteral = func() string {
+				return F("%v(%v)", id, t.complexLiteral())
+			}
 		}
 	}
 	defineType(newTyp)
