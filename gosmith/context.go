@@ -332,6 +332,8 @@ func materializeVar(t *Type) string {
 	curBlockLen0 := len(curBlock.sub)
 	exprDepth0 := exprDepth
 	exprCount0 := exprCount
+	exprDepth = 0
+	exprCount = 0
 	defer func() {
 		if curBlock == curBlock0 {
 			curBlockPos0 += len(curBlock.sub) - curBlockLen0
@@ -396,11 +398,36 @@ func materializeFunc(res *Type) *Func {
 	curBlock0 := curBlock
 	curBlockPos0 := curBlockPos
 	curFunc0 := curFunc
+	exprDepth0 := exprDepth
+	exprCount0 := exprCount
+	exprDepth = 0
+	exprCount = 0
 	defer func() {
 		curBlock = curBlock0
 		curBlockPos = curBlockPos0
 		curFunc = curFunc0
+		exprDepth = exprDepth0
+		exprCount = exprCount0
 	}()
+
+	if rndBool() && curPackage != NPackages-1 {
+		if dependsOn(res, nil) {
+			goto thisPackage
+		}
+		for _, t := range f.args {
+			if dependsOn(t, nil) {
+				goto thisPackage
+			}
+		}
+		// emit global var into another package
+		newF := new(Func)
+		*newF = *f
+		packages[curPackage+1].undefFuncs = append(packages[curPackage+1].undefFuncs, newF)
+		packages[curPackage].imports[packages[curPackage+1].name] = true
+		f.name = packages[curPackage+1].name + "." + f.name
+		return f
+	}
+thisPackage:
 	genToplevFunction(curPackage, f)
 	return f
 }

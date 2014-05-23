@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 )
@@ -35,6 +36,7 @@ const (
 type Type struct {
 	id             string
 	class          TypeClass
+	namedUserType  bool
 	ktyp           *Type   // map key, chan elem, array elem, slice elem, pointee type
 	vtyp           *Type   // map val
 	utyp           *Type   // underlying type
@@ -387,15 +389,52 @@ func arrayOf(elem *Type) *Type {
 }
 
 func funcOf(alist, rlist []*Type) *Type {
-	return &Type{
+	t := &Type{
 		id:    F("func%v %v", fmtTypeList(alist, true), fmtTypeList(rlist, false)),
 		class: ClassFunction,
 		styp:  alist,
 		rtyp:  rlist,
-		literal: func() string {
-			return F("((func%v %v)(nil))", fmtTypeList(alist, true), fmtTypeList(rlist, false))
-		},
 	}
+	t.literal = func() string {
+		return F("((func%v %v)(nil))", fmtTypeList(alist, true), fmtTypeList(rlist, false))
+	}
+	t.complexLiteral = func() string {
+		return genFuncLit(t)
+		// return F("((func%v %v)(nil))", fmtTypeList(alist, true), fmtTypeList(rlist, false))
+	}
+	return t
+}
+
+func genFuncLit(ft *Type) string {
+	curToplevPos := len(packages[curPackage].top.sub)
+	curBlock0 := curBlock
+	curBlockPos0 := curBlockPos
+	curFunc0 := curFunc
+	exprDepth0 := exprDepth
+	exprCount0 := exprCount
+	exprDepth = 0
+	exprCount = 0
+	defer func() {
+		curBlock = curBlock0
+		curBlockPos = curBlockPos0
+		curFunc = curFunc0
+		exprDepth = exprDepth0
+		exprCount = exprCount0
+	}()
+	f := &Func{args: ft.styp, rets: ft.rtyp}
+	// TODO: it must work in the current context to reference local vars
+	genToplevFunction(curPackage, f)
+
+	b := packages[curPackage].top.sub[curToplevPos]
+	packages[curPackage].top.sub[curToplevPos] = &Block{}
+
+	var buf bytes.Buffer
+	w := bufio.NewWriter(&buf)
+	serializeBlock(w, b, 0)
+	w.Flush()
+	s := buf.String()
+	fmt.Printf("GEN FUNC:\n%v\n", s)
+	return s[:len(s)-1]
 }
 
 func dependsOn(t, t0 *Type) bool {
@@ -404,6 +443,9 @@ func dependsOn(t, t0 *Type) bool {
 	}
 	if t.class == ClassInterface {
 		// We don't know how to walk all types referenced by an interface yet.
+		return true
+	}
+	if t0 == nil && t.namedUserType {
 		return true
 	}
 	if t == t0 {

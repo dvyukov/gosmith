@@ -251,6 +251,7 @@ func stmtTypeDecl() {
 	newTyp := new(Type)
 	*newTyp = *t
 	newTyp.id = id
+	newTyp.namedUserType = true
 	if t.class == ClassStruct {
 		newTyp.literal = func() string {
 			// replace struct name with new type id
