@@ -84,7 +84,6 @@ func init() {
 		regexp.MustCompile("cannot take the address of"),
 		regexp.MustCompile("internal compiler error: out of fixed registers"),
 		regexp.MustCompile("internal compiler error: fault"), // https://code.google.com/p/go/issues/detail?id=8058
-		regexp.MustCompile("index out of bounds"),  // currently gosmith can generate out-of-bounds with constant index
 	}
 	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{}
 	knownBuildBugs["gc.386"] = []*regexp.Regexp{}
@@ -104,7 +103,6 @@ func init() {
 		regexp.MustCompile("error: argument 2 has incompatible type"),
 		regexp.MustCompile("__normal_iterator"),
 		regexp.MustCompile("Unsafe_type_conversion_expression::do_get_backend"),
-		regexp.MustCompile("index out of bounds"),  // currently gosmith can generate out-of-bounds with constant index
 	}
 }
 

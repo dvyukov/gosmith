@@ -76,9 +76,9 @@ func initTypes() {
 
 	stringType.complexLiteral = func() string {
 		if rndBool() {
-			return `"\u65e5本\U00008a9e"`
+			return `"ab\x0acd"`
 		}
-		return "`\u65e5本\U00008a9e\x0a\x0d`"
+		return "`abc\\x0acd`"
 	}
 }
 
@@ -139,12 +139,36 @@ func typeLit() *Type {
 			fmt.Fprintf(&buf, "%v %v\n", e.id, e.typ.id)
 		}
 		fmt.Fprintf(&buf, "}")
+		id := buf.String()
 		return &Type{
-			id:    buf.String(),
+			id:    id,
 			class: ClassStruct,
 			elems: elems,
 			literal: func() string {
-				return F("%v{}", buf.String())
+				return F("%v{}", id)
+			},
+			complexLiteral: func() string {
+				if rndBool() {
+					// unnamed
+					var buf bytes.Buffer
+					fmt.Fprintf(&buf, "%v{", id)
+					for i := 0; i < len(elems); i++ {
+						fmt.Fprintf(&buf, "%v, ", rvalue(elems[i].typ))
+					}
+					fmt.Fprintf(&buf, "}")
+					return buf.String()
+				} else {
+					// named
+					var buf bytes.Buffer
+					fmt.Fprintf(&buf, "%v{", id)
+					for i := 0; i < len(elems); i++ {
+						if rndBool() {
+							fmt.Fprintf(&buf, "%v: %v, ", elems[i].id, rvalue(elems[i].typ))
+						}
+					}
+					fmt.Fprintf(&buf, "}")
+					return buf.String()
+				}
 			},
 		}
 	case "pointer":
@@ -166,16 +190,7 @@ func typeLit() *Type {
 	case "slice":
 		return sliceOf(atype(TraitAny))
 	case "function":
-		rlist := atypeList(TraitAny)
-		alist := atypeList(TraitAny)
-		return &Type{
-			id:    F("func%v %v", fmtTypeList(alist, true), fmtTypeList(rlist, false)),
-			class: ClassFunction,
-			styp:  alist,
-			rtyp:  rlist,
-			literal: func() string {
-				return F("((func%v %v)(nil))", fmtTypeList(alist, true), fmtTypeList(rlist, false))
-			}}
+		return funcOf(atypeList(TraitAny), atypeList(TraitAny))
 	case "map":
 		ktyp := atype(TraitHashable)
 		vtyp := atype(TraitAny)
@@ -263,6 +278,14 @@ func atypeList(trait TypeClass) []*Type {
 	return list
 }
 
+func typeList(t *Type, n int) []*Type {
+	list := make([]*Type, n)
+	for i := 0; i < n; i++ {
+		list[i] = t
+	}
+	return list
+}
+
 func pointerTo(elem *Type) *Type {
 	return &Type{
 		id:    F("*%v", elem.id),
@@ -295,7 +318,39 @@ func sliceOf(elem *Type) *Type {
 		ktyp:  elem,
 		literal: func() string {
 			return F("[]%v{}", elem.id)
-		}}
+		},
+		complexLiteral: func() string {
+			switch choice("normal", "keyed") {
+			case "normal":
+				return F("[]%v{%v}", elem.id, fmtRvalueList(typeList(elem, rnd(3))))
+			case "keyed":
+				n := rnd(3)
+				var indexes []int
+			loop:
+				for len(indexes) < n {
+					i := rnd(10)
+					for _, i1 := range indexes {
+						if i1 == i {
+							continue loop
+						}
+					}
+					indexes = append(indexes, i)
+				}
+				var buf bytes.Buffer
+				fmt.Fprintf(&buf, "[]%v{", elem.id)
+				for i, idx := range indexes {
+					if i != 0 {
+						fmt.Fprintf(&buf, ",")
+					}
+					fmt.Fprintf(&buf, "%v: %v", idx, rvalue(elem))
+				}
+				fmt.Fprintf(&buf, "}")
+				return buf.String()
+			default:
+				panic("bad")
+			}
+		},
+	}
 }
 
 func arrayOf(elem *Type) *Type {
@@ -310,22 +365,33 @@ func arrayOf(elem *Type) *Type {
 		complexLiteral: func() string {
 			switch choice("normal", "keyed") {
 			case "normal":
+				return F("[%v]%v{%v}", choice(F("%v", size), "..."), elem.id, fmtRvalueList(typeList(elem, size)))
+			case "keyed":
 				var buf bytes.Buffer
-				fmt.Fprintf(&buf, "[%v]%v{", choice(F("%v", size), "..."), elem.id)
+				fmt.Fprintf(&buf, "[%v]%v{", size, elem.id)
 				for i := 0; i < size; i++ {
 					if i != 0 {
 						fmt.Fprintf(&buf, ",")
 					}
-					fmt.Fprintf(&buf, "%v", rvalue(elem))
+					fmt.Fprintf(&buf, "%v: %v", i, rvalue(elem))
 				}
 				fmt.Fprintf(&buf, "}")
 				return buf.String()
-			case "keyed":
-				// TODO: implement
-				return F("[%v]%v{}", size, elem.id)
 			default:
 				panic("bad")
 			}
+		},
+	}
+}
+
+func funcOf(alist, rlist []*Type) *Type {
+	return &Type{
+		id:    F("func%v %v", fmtTypeList(alist, true), fmtTypeList(rlist, false)),
+		class: ClassFunction,
+		styp:  alist,
+		rtyp:  rlist,
+		literal: func() string {
+			return F("((func%v %v)(nil))", fmtTypeList(alist, true), fmtTypeList(rlist, false))
 		},
 	}
 }

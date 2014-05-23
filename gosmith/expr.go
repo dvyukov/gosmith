@@ -16,6 +16,7 @@ func initExpressions() {
 		exprEqual,
 		exprOrder,
 		exprCall,
+		exprCallBuiltin,
 		exprAddress,
 		exprDeref,
 		exprSlice,
@@ -45,6 +46,51 @@ func expression(res *Type) string {
 
 func rvalue(t *Type) string {
 	return expression(t)
+}
+
+// rvalue, but not a const
+// used to index arrays and strings
+func nonconstRvalue(t *Type) string {
+	if t.class != ClassNumeric {
+		panic("bad")
+	}
+trying:
+	for {
+		res := ""
+		switch choice("lvalue", "call", "len", "selector", "recv", "arith", "indexMap", "conv") {
+		case "lvalue":
+			res = lvalue(t)
+		case "call":
+			res = exprCall(t)
+		case "len":
+			tt := atype(TraitLenCapable)
+			fn := choice("len", "cap")
+			if (tt.class == ClassString || tt.class == ClassMap) && fn == "cap" {
+				break
+			}
+			if tt.class == ClassArray {
+				// len/cap are const
+				break
+			}
+			res = F("(%v)((%v)(%v))", t.id, fn, lvalue(tt))
+		case "selector":
+			res = exprSelectorField(t)
+		case "recv":
+			res = exprRecv(t)
+		case "arith":
+			res = F("(%v) %v (%v)", lvalue(t), choice("+", "*"), lvalue(t))
+		case "indexMap":
+			res = exprIndexMap(t)
+		case "conv":
+			res = F("(%v)(%v %v)", t.id, lvalue(atype(ClassNumeric)), choice("", ","))
+		default:
+			panic("bad")
+		}
+		if res == "" {
+			continue trying
+		}
+		return res
+	}
 }
 
 func lvalue(t *Type) string {
@@ -180,6 +226,9 @@ func exprAddress(res *Type) string {
 	if res.class != ClassPointer {
 		return ""
 	}
+	if res.ktyp.class == ClassStruct && rndBool() {
+		return F("&%v", res.ktyp.complexLiteral())
+	}
 	return F("(%v)(&(%v))", res.id, lvalue(res.ktyp))
 }
 
@@ -217,10 +266,8 @@ func exprOrder(res *Type) string {
 }
 
 func exprCall(ret *Type) string {
-	if rndBool() {
-		return exprCallBuiltin(ret)
-	}
-	return ""
+	t := funcOf(atypeList(TraitAny), []*Type{ret})
+	return F("%v(%v)", rvalue(t), fmtRvalueList(t.styp))
 }
 
 func exprCallBuiltin(ret *Type) string {
@@ -330,9 +377,8 @@ func exprIndexString(ret *Type) string {
 		return ""
 	}
 	s := rvalue(stringType)
-	if s[0] == '"' {
-		// Use lvalue for index to prevent out-of-bounds errors for string literals.
-		return F("(%v)[%v]", s, lvalue(intType))
+	if s[0] == '"' || s[0] == '`' {
+		return F("(%v)[%v]", s, nonconstRvalue(intType))
 	} else {
 		return F("(%v)[%v]", s, rvalue(intType))
 	}
@@ -340,8 +386,7 @@ func exprIndexString(ret *Type) string {
 
 func exprIndexArray(ret *Type) string {
 	// TODO: also handle indexing of pointers to arrays
-	// TODO: index by lvalue to pass bounds check
-	return F("(%v)[%v]", rvalue(arrayOf(ret)), lvalue(intType))
+	return F("(%v)[%v]", rvalue(arrayOf(ret)), nonconstRvalue(intType))
 }
 
 func exprIndexMap(ret *Type) string {
