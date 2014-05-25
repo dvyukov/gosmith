@@ -55,6 +55,13 @@ func stmtAs() {
 }
 
 func stmtInc() {
+	if rndBool() {
+		m := exprIndexMap(atype(ClassNumeric))
+		if m != "" {
+			line("%v %v", m, choice("--", "++"))
+			return
+		}
+	}
 	line("%v %v", lvalue(atype(ClassNumeric)), choice("--", "++"))
 }
 

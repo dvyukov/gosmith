@@ -1,6 +1,13 @@
-// 1398120132020256795
-
 package main
+
+/*
+Large uncovered parts are:
+- methods
+- type assignability and identity
+- consts
+- interfaces, types implementing interfaces, type assertions
+- ... parameters
+*/
 
 import (
 	"bufio"
@@ -21,10 +28,10 @@ const (
 	NTotalExprCount = 50
 
 /*
-	NStatements     = 50
-	NExprDepth      = 8
+	NStatements     = 30
+	NExprDepth      = 6
 	NExprCount      = 20
-	NTotalExprCount = 5000
+	NTotalExprCount = 1000
 */
 )
 
@@ -43,6 +50,7 @@ type Package struct {
 type Block struct {
 	str           string
 	parent        *Block
+	subBlock      *Block
 	extendable    bool
 	isBreakable   bool
 	isContinuable bool
@@ -78,12 +86,13 @@ var (
 
 	packages [NPackages]*Package
 
-	idSeq           int
-	typeDepth       int
-	stmtCount       int
-	exprDepth       int
-	exprCount       int
-	totalExprCount  int
+	idSeq          int
+	typeDepth      int
+	stmtCount      int
+	exprDepth      int
+	exprCount      int
+	totalExprCount int
+
 	predefinedTypes []*Type
 	stringType      *Type
 	boolType        *Type
@@ -91,8 +100,13 @@ var (
 	byteType        *Type
 	efaceType       *Type
 	runeType        *Type
-	statements      []func()
-	expressions     []func(res *Type) string
+	float32Type     *Type
+	float64Type     *Type
+	complex64Type   *Type
+	complex128Type  *Type
+
+	statements  []func()
+	expressions []func(res *Type) string
 )
 
 func writeProgram(dir string) {
@@ -156,10 +170,8 @@ func line(f string, args ...interface{}) {
 	s := F(f, args...)
 	b := &Block{parent: curBlock, str: s}
 	if curBlockPos+1 == len(curBlock.sub) {
-		println("+LINE:", curBlock, s)
 		curBlock.sub = append(curBlock.sub, b)
 	} else {
-		println("<LINE:", curBlock, s)
 		curBlock.sub = append(curBlock.sub, nil)
 		copy(curBlock.sub[curBlockPos+2:], curBlock.sub[curBlockPos+1:])
 		curBlock.sub[curBlockPos+1] = b
@@ -227,7 +239,11 @@ func serializeProgram(dir string) {
 		}
 		path := filepath.Join(dir, "src", p.name)
 		os.MkdirAll(path, os.ModePerm)
-		files := [NFiles]*bufio.Writer{}
+		nf := NFiles
+		if *singlefile {
+			nf = 1
+		}
+		files := make([]*bufio.Writer, nf)
 		for i := range files {
 			fname := filepath.Join(path, fmt.Sprintf("%v.go", i))
 			f, err := os.Create(fname)
@@ -271,7 +287,7 @@ func serializeProgram(dir string) {
 }
 
 func serializeBlock(w *bufio.Writer, b *Block, d int) {
-	if false {
+	if true {
 		if b.str != "" {
 			w.WriteString(b.str)
 			w.WriteString("\n")
@@ -296,7 +312,20 @@ func vars() []*Var {
 			vars = append(vars, b1.vars...)
 		}
 		if b.parent != nil {
-			f(b.parent, len(b.parent.sub)-1)
+			pos := len(b.parent.sub) - 1
+			if b.subBlock != nil {
+				pos = -2
+				for i, b1 := range b.parent.sub {
+					if b1 == b.subBlock {
+						pos = i
+						break
+					}
+				}
+				if pos == -2 {
+					panic("bad")
+				}
+			}
+			f(b.parent, pos)
 		}
 	}
 	f(curBlock, curBlockPos)
@@ -312,7 +341,20 @@ func types() []*Type {
 			types = append(types, b1.types...)
 		}
 		if b.parent != nil {
-			f(b.parent, len(b.parent.sub)-1)
+			pos := len(b.parent.sub) - 1
+			if b.subBlock != nil {
+				pos = -2
+				for i, b1 := range b.parent.sub {
+					if b1 == b.subBlock {
+						pos = i
+						break
+					}
+				}
+				if pos == -2 {
+					panic("bad")
+				}
+			}
+			f(b.parent, pos)
 		}
 	}
 	f(curBlock, curBlockPos)
@@ -333,10 +375,6 @@ func defineType(t *Type) {
 func materializeVar(t *Type) string {
 	// TODO: generate var in another package
 	id := newId("Var")
-	println("MATER VAR {{{", id, curBlock, len(curBlock.sub), curBlockPos)
-	defer func() {
-		println("MATER VAR }}}", id, curBlock, len(curBlock.sub), curBlockPos)
-	}()
 	curBlock0 := curBlock
 	curBlockPos0 := curBlockPos
 	curBlockLen0 := len(curBlock.sub)
@@ -359,9 +397,21 @@ loop:
 			break
 		}
 		if !curBlock.extendable || curBlockPos < 0 {
+			if curBlock.subBlock == nil {
+				curBlockPos = len(curBlock.parent.sub) - 2
+			} else {
+				curBlockPos = -2
+				for i, b1 := range curBlock.parent.sub {
+					if b1 == curBlock.subBlock {
+						curBlockPos = i
+						break
+					}
+				}
+				if curBlockPos == -2 {
+					panic("bad")
+				}
+			}
 			curBlock = curBlock.parent
-			curBlockPos = len(curBlock.sub) - 2
-			println("MOVETO", id, curBlock, curBlockPos)
 			continue
 		}
 		if rnd(3) == 0 {
@@ -377,7 +427,6 @@ loop:
 		}
 		curBlockPos--
 	}
-	println("ENDUPAT", id, curBlock, curBlockPos)
 	if curBlock.parent == nil {
 		for i := curPackage; i < NPackages; i++ {
 			if rndBool() || i == NPackages-1 || *singlepkg {
@@ -404,8 +453,8 @@ loop:
 	return id
 }
 
-func materializeFunc(res *Type) *Func {
-	f := &Func{name: newId("Func"), args: atypeList(TraitGlobal), rets: []*Type{res}}
+func materializeFunc(rets []*Type) *Func {
+	f := &Func{name: newId("Func"), args: atypeList(TraitGlobal), rets: rets}
 
 	curBlock0 := curBlock
 	curBlockPos0 := curBlockPos
@@ -423,8 +472,10 @@ func materializeFunc(res *Type) *Func {
 	}()
 
 	if rndBool() && !*singlepkg && curPackage != NPackages-1 {
-		if dependsOn(res, nil) {
-			goto thisPackage
+		for _, r1 := range rets {
+			if dependsOn(r1, nil) {
+				goto thisPackage
+			}
 		}
 		for _, t := range f.args {
 			if dependsOn(t, nil) {
@@ -464,6 +515,10 @@ func materializeGotoLabel() string {
 			break
 		}
 		if !curBlock.extendable || curBlockPos < 0 {
+			if curBlock.subBlock != nil {
+				// we should have been stopped at func boundary
+				panic("bad")
+			}
 			curBlock = curBlock.parent
 			curBlockPos = len(curBlock.sub) - 2
 			continue

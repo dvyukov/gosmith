@@ -101,8 +101,7 @@ func lvalue(t *Type) string {
 		case "indexSlice":
 			return exprIndexSlice(t)
 		case "indexArray":
-			// TODO: index by lvalue to pass bounds check
-			return F("(%v)[%v]", lvalue(arrayOf(t)), lvalue(intType))
+			return F("(%v)[%v]", lvalue(arrayOf(t)), nonconstRvalue(intType))
 		case "selector":
 			for i := 0; i < 10; i++ {
 				st := atype(ClassStruct)
@@ -217,9 +216,30 @@ func exprFunc(res *Type) string {
 		}
 	}
 	if f == nil {
-		f = materializeFunc(res)
+		f = materializeFunc([]*Type{res})
 	}
-	return F("%v(%v)", f.name, fmtRvalueList(f.args))
+	if rndBool() {
+		return F("%v(%v)", f.name, fmtRvalueList(f.args))
+	} else {
+		var f0 *Func
+	loop:
+		for _, f1 := range packages[curPackage].toplevFuncs {
+			if len(f1.rets) == len(f.args) {
+				for i := range f.args {
+					// TODO: check assignability
+					if f1.rets[i] != f.args[i] {
+						continue loop
+					}
+				}
+				f0 = f1
+				break
+			}
+		}
+		if f0 == nil {
+			f0 = materializeFunc(f.args)
+		}
+		return F("%v(%v(%v))", f.name, f0.name, fmtRvalueList(f0.args))
+	}
 }
 
 func exprAddress(res *Type) string {
@@ -242,7 +262,7 @@ func exprRecv(res *Type) string {
 }
 
 func exprArith(res *Type) string {
-	if res.class != ClassNumeric {
+	if res.class != ClassNumeric && res.class != ClassComplex {
 		return ""
 	}
 	return F("(%v) %v (%v)", rvalue(res), choice("+", "*"), rvalue(res))
@@ -286,9 +306,7 @@ func exprCallBuiltin(ret *Type) string {
 		default:
 			panic("bad")
 		}
-	case "cap":
-		fallthrough
-	case "len":
+	case "len", "cap":
 		if ret != intType { // TODO: must be convertable
 			return ""
 		}
@@ -298,15 +316,11 @@ func exprCallBuiltin(ret *Type) string {
 
 		}
 		return F("%v(%v)", fn, rvalue(t))
-	case "complex":
-		return ""
 	case "copy":
 		if ret != intType {
 			return ""
 		}
 		return F("%v", exprCopySlice())
-	case "imag":
-		return ""
 	case "make":
 		if ret.class != ClassSlice && ret.class != ClassMap && ret.class != ClassChan {
 			return ""
@@ -328,13 +342,27 @@ func exprCallBuiltin(ret *Type) string {
 			return ""
 		}
 		return F("new(%v)", ret.ktyp.id)
-	case "real":
-		return ""
 	case "recover":
 		if ret != efaceType {
 			return ""
 		}
 		return "recover()"
+	case "real", "imag":
+		if ret == float32Type {
+			return F("real(%v)", rvalue(complex64Type))
+		}
+		if ret == float64Type {
+			return F("real(%v)", rvalue(complex128Type))
+		}
+		return ""
+	case "complex":
+		if ret == complex64Type {
+			return F("complex(%v, %v)", rvalue(float32Type), rvalue(float32Type))
+		}
+		if ret == complex128Type {
+			return F("complex(%v, %v)", rvalue(float64Type), rvalue(float64Type))
+		}
+		return ""
 	default:
 		panic("bad")
 	}
@@ -404,6 +432,9 @@ func exprConversion(ret *Type) string {
 	if ret.class == ClassNumeric {
 		return F("(%v)(%v %v)", ret.id, rvalue(atype(ClassNumeric)), choice("", ","))
 	}
+	if ret.class == ClassComplex {
+		return F("(%v)(%v %v)", ret.id, rvalue(atype(ClassComplex)), choice("", ","))
+	}
 	if ret == stringType {
 		switch choice("int", "byteSlice", "runeSlice") {
 		case "int":
@@ -424,6 +455,5 @@ func exprConversion(ret *Type) string {
 	// TODO: handle "x is assignable to T"
 	// TODO: handle "x's type and T have identical underlying types"
 	// TODO: handle "x's type and T are unnamed pointer types and their pointer base types have identical underlying types"
-	// TODO: handle "x's type and T are both complex types"
 	return ""
 }

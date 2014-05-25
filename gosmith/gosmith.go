@@ -8,9 +8,10 @@ import (
 )
 
 var (
-	seed      = flag.Int64("seed", 0, "random generator seed")
-	workdir   = flag.String("dir", "", "directory to write the program to")
-	singlepkg = flag.Bool("singlepkg", false, "generate single-package program")
+	seed       = flag.Int64("seed", 0, "random generator seed")
+	workdir    = flag.String("dir", "", "directory to write the program to")
+	singlepkg  = flag.Bool("singlepkg", false, "generate single-package program")
+	singlefile = flag.Bool("singlefile", false, "generate single-file packages")
 )
 
 func main() {

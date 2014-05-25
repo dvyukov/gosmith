@@ -11,6 +11,7 @@ type TypeClass int
 const (
 	ClassBoolean TypeClass = iota
 	ClassNumeric
+	ClassComplex
 	ClassString
 	ClassArray
 	ClassSlice
@@ -58,11 +59,14 @@ func initTypes() {
 		&Type{id: "byte", class: ClassNumeric, literal: func() string { return "byte(0)" }},
 		&Type{id: "interface{}", class: ClassInterface, literal: func() string { return "interface{}(nil)" }},
 		&Type{id: "rune", class: ClassNumeric, literal: func() string { return "rune(0)" }},
+		&Type{id: "float32", class: ClassNumeric, literal: func() string { return "float32(1.0)" }},
+		&Type{id: "float64", class: ClassNumeric, literal: func() string { return "1.0" }},
+		&Type{id: "complex64", class: ClassComplex, literal: func() string { return "complex64(1i)" }},
+		&Type{id: "complex128", class: ClassComplex, literal: func() string { return "1i" }},
+
 		&Type{id: "uint", class: ClassNumeric, literal: func() string { return "uint(1)" }},
 		&Type{id: "uintptr", class: ClassNumeric, literal: func() string { return "uintptr(0)" }},
 		&Type{id: "int16", class: ClassNumeric, literal: func() string { return "int16(1)" }},
-		&Type{id: "float64", class: ClassNumeric, literal: func() string { return "1.0" }},
-		&Type{id: "float32", class: ClassNumeric, literal: func() string { return "float32(1.0)" }},
 		&Type{id: "error", class: ClassInterface, literal: func() string { return "error(nil)" }},
 	}
 	for _, t := range predefinedTypes {
@@ -75,6 +79,10 @@ func initTypes() {
 	byteType = predefinedTypes[3]
 	efaceType = predefinedTypes[4]
 	runeType = predefinedTypes[5]
+	float32Type = predefinedTypes[6]
+	float64Type = predefinedTypes[7]
+	complex64Type = predefinedTypes[8]
+	complex128Type = predefinedTypes[9]
 
 	stringType.complexLiteral = func() string {
 		if rndBool() {
@@ -405,30 +413,32 @@ func funcOf(alist, rlist []*Type) *Type {
 }
 
 func genFuncLit(ft *Type) string {
-	if curBlockPos != -1 {
-		println("CUR", curBlock.sub[curBlockPos].str)
-	}
-	println("GENFUNC{{{", curBlock, len(curBlock.sub), curBlockPos)
-	defer func() {
-		println("GENFUNC}}}", curBlock, len(curBlock.sub), curBlockPos)
-	}()
-	//_ = bufio.Writer{}
 	//return F("((func%v %v)(nil))", fmtTypeList(ft.styp, true), fmtTypeList(ft.rtyp, false))
+
+	if curBlockPos == -1 {
+		line("")
+	}
+
 	f := &Func{args: ft.styp, rets: ft.rtyp}
 	curFunc0 := curFunc
 	curFunc = f
+	curBlock0 := curBlock
 	curBlockPos0 := curBlockPos
+	curBlockLen0 := len(curBlock.sub)
 	exprDepth0 := exprDepth
 	exprCount0 := exprCount
 	exprDepth = 0
 	exprCount = 0
 	defer func() {
+		curBlock = curBlock0
 		curFunc = curFunc0
 		exprDepth = exprDepth0
 		exprCount = exprCount0
-		curBlockPos = curBlockPos0
+		curBlockPos = curBlockPos0 + (len(curBlock.sub) - curBlockLen0)
 	}()
 
+	fb := &Block{parent: curBlock, subBlock: curBlock.sub[curBlockPos]}
+	curBlock = fb
 	enterBlock(true)
 	enterBlock(true)
 	argIds := make([]string, len(f.args))
@@ -445,21 +455,19 @@ func genFuncLit(ft *Type) string {
 		defineVar(argIds[i], a)
 	}
 	curBlock.funcBoundary = true
-	curBlock.isBreakable = false
-	curBlock.isContinuable = false
 	genBlock()
 	leaveBlock()
 	stmtReturn()
 	line("}")
 	leaveBlock()
 
-	b := curBlock.sub[curBlockPos]
-	copy(curBlock.sub[curBlockPos:], curBlock.sub[curBlockPos+1:])
-	curBlock.sub = curBlock.sub[:len(curBlock.sub)-1]
+	//b := curBlock.sub[curBlockPos]
+	//copy(curBlock.sub[curBlockPos:], curBlock.sub[curBlockPos+1:])
+	//curBlock.sub = curBlock.sub[:len(curBlock.sub)-1]
 
 	var buf bytes.Buffer
 	w := bufio.NewWriter(&buf)
-	serializeBlock(w, b, 0)
+	serializeBlock(w, fb, 0)
 	w.Flush()
 	s := buf.String()
 	//fmt.Printf("GEN FUNC:\n%v\n", s)
