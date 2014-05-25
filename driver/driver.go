@@ -39,6 +39,7 @@ var (
 	parallelism = flag.Int("p", runtime.NumCPU(), "number of parallel tests")
 	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,nacl,race,gccgo,llgo,ssa,gofmt,exec)")
 	workDir     = flag.String("workdir", "./work", "working directory for temp files")
+	timeout     = flag.Int64("timeout", 10, "task timeout in seconds")
 
 	statTotal   uint64
 	statBuild   uint64
@@ -502,7 +503,7 @@ func runWithTimeout(cmd *exec.Cmd) ([]byte, error) {
 		select {
 		case <-done:
 			return
-		case <-time.After(10 * time.Second):
+		case <-time.After(time.Duration(*timeout) * time.Second):
 		}
 		cmd.Process.Signal(syscall.SIGABRT)
 		select {
