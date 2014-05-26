@@ -98,6 +98,8 @@ func init() {
 		regexp.MustCompile("internal compiler error: in fold_convert_loc, at fold-const.c:2072"),
 		regexp.MustCompile("internal compiler error: in do_determine_types, at go/gofrontend/statements.cc:400"),
 		regexp.MustCompile("internal compiler error: verify_gimple failed"),
+		regexp.MustCompile("internal compiler error: in descriptor, at go/gofrontend/gogo.cc:4572"), // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61307
+		regexp.MustCompile("internal compiler error: in check_bounds, at go/gofrontend/expressions.cc:480"), // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61308
 		regexp.MustCompile("error: too many arguments"),
 		regexp.MustCompile("error: expected '<-' or '='"),
 		regexp.MustCompile("error: slice end must be integer"),
