@@ -88,7 +88,7 @@ func init() {
 		regexp.MustCompile("fallthrough statement out of place"),
 		regexp.MustCompile("cannot take the address of"),
 		regexp.MustCompile("mixture of field:value and value initializers"), // https://code.google.com/p/go/issues/detail?id=8099
-		regexp.MustCompile("internal compiler error: out of fixed registers"),
+		regexp.MustCompile("out of fixed registers"),
 		regexp.MustCompile("internal compiler error: fault"), // https://code.google.com/p/go/issues/detail?id=8058
 		regexp.MustCompile("SIGABRT: abort"),                 // https://code.google.com/p/go/issues/detail?id=8076
 	}
