@@ -195,7 +195,7 @@ func stmtSimple(oas bool, newVars *[]*Var) string {
 	}
 	// "send" crashes gccgo with random errors too frequently.
 	// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61273
-	switch choice("empty", "inc", "assign", "oas" /*"send",*/, "expr") {
+	switch choice("empty", "inc", "assign", "oas", "send", "expr") {
 	case "empty":
 		return ""
 	case "inc":
