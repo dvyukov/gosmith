@@ -265,7 +265,9 @@ func exprArith(res *Type) string {
 	if res.class != ClassNumeric && res.class != ClassComplex {
 		return ""
 	}
-	return F("(%v) %v (%v)", rvalue(res), choice("+", "*"), rvalue(res))
+	// "/" causes division by zero
+	// "*" causes generation of -1 index in int(real(1i * 1i))
+	return F("(%v) + (%v)", rvalue(res), rvalue(res))
 }
 
 func exprEqual(res *Type) string {
@@ -397,19 +399,14 @@ func exprSlice(ret *Type) string {
 }
 
 func exprIndexSlice(ret *Type) string {
-	return F("(%v)[%v]", rvalue(sliceOf(ret)), rvalue(intType))
+	return F("(%v)[%v]", rvalue(sliceOf(ret)), nonconstRvalue(intType))
 }
 
 func exprIndexString(ret *Type) string {
 	if ret != byteType {
 		return ""
 	}
-	s := rvalue(stringType)
-	if s[0] == '"' || s[0] == '`' {
-		return F("(%v)[%v]", s, nonconstRvalue(intType))
-	} else {
-		return F("(%v)[%v]", s, rvalue(intType))
-	}
+	return F("(%v)[%v]", rvalue(stringType), nonconstRvalue(intType))
 }
 
 func exprIndexArray(ret *Type) string {

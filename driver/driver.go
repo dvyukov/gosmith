@@ -78,13 +78,19 @@ var (
 )
 
 func init() {
+	knownBuildBugs["all"] = []*regexp.Regexp{
+		regexp.MustCompile("constant .* overflows"), // problem is gosmith
+	}
+
 	knownBuildBugs["gc"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
 		regexp.MustCompile("internal compiler error: overflow: "),
 		regexp.MustCompile("fallthrough statement out of place"),
 		regexp.MustCompile("cannot take the address of"),
+		regexp.MustCompile("mixture of field:value and value initializers"), // https://code.google.com/p/go/issues/detail?id=8099
 		regexp.MustCompile("internal compiler error: out of fixed registers"),
 		regexp.MustCompile("internal compiler error: fault"), // https://code.google.com/p/go/issues/detail?id=8058
+		regexp.MustCompile("SIGABRT: abort"),                 // https://code.google.com/p/go/issues/detail?id=8076
 	}
 	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{}
 	knownBuildBugs["gc.386"] = []*regexp.Regexp{}
@@ -92,20 +98,25 @@ func init() {
 	knownBuildBugs["gc.amd64.race"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: found non-orig name node"),
 	}
-	knownBuildBugs["gccgo.amd64"] = []*regexp.Regexp{
+	knownBuildBugs["gccgo"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
 		regexp.MustCompile("internal compiler error: in write_specific_type_functions, at go/gofrontend/types.cc:1819"),
 		regexp.MustCompile("internal compiler error: in fold_convert_loc, at fold-const.c:2072"),
 		regexp.MustCompile("internal compiler error: in do_determine_types, at go/gofrontend/statements.cc:400"),
 		regexp.MustCompile("internal compiler error: verify_gimple failed"),
-		regexp.MustCompile("internal compiler error: in descriptor, at go/gofrontend/gogo.cc:4572"), // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61307
+		regexp.MustCompile("internal compiler error: in descriptor, at go/gofrontend/gogo.cc:4572"),         // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61307
 		regexp.MustCompile("internal compiler error: in check_bounds, at go/gofrontend/expressions.cc:480"), // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61308
 		regexp.MustCompile("error: too many arguments"),
 		regexp.MustCompile("error: expected '<-' or '='"),
 		regexp.MustCompile("error: slice end must be integer"),
 		regexp.MustCompile("error: argument 2 has incompatible type"),
+		regexp.MustCompile("error: incompatible types in assignment (multiple-value function call in single-value context)"), // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61316
 		regexp.MustCompile("__normal_iterator"),
 		regexp.MustCompile("Unsafe_type_conversion_expression::do_get_backend"),
+
+		// gllgo
+		regexp.MustCompile("_Cfunc_LLVMTargetMachineEmitToMemoryBuffer"), // https://github.com/go-llvm/llgo/issues/174
+		regexp.MustCompile("panic: unimplemented conversion"),            // https://github.com/go-llvm/llgo/issues/176
 	}
 }
 
@@ -289,6 +300,12 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 		}
 	}
 	for _, known := range knownBuildBugs[compiler] {
+		if known.Match(out) {
+			atomic.AddUint64(&statKnown, 1)
+			return false
+		}
+	}
+	for _, known := range knownBuildBugs["all"] {
 		if known.Match(out) {
 			atomic.AddUint64(&statKnown, 1)
 			return false
