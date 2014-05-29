@@ -37,7 +37,7 @@ import (
 
 var (
 	parallelism = flag.Int("p", runtime.NumCPU(), "number of parallel tests")
-	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,nacl,race,gccgo,llgo,ssa,gofmt,exec)")
+	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,nacl64,nacl32,race,gccgo,ssa,gofmt,exec)")
 	workDir     = flag.String("workdir", "./work", "working directory for temp files")
 	timeout     = flag.Int64("timeout", 10, "task timeout in seconds")
 
@@ -52,7 +52,7 @@ var (
 	knownSsadumpBugs = []*regexp.Regexp{}
 	knownExecBugs    = []*regexp.Regexp{
 		regexp.MustCompile("^panic: "),
-		regexp.MustCompile("panic: runtime error: go of nil func value"),
+		regexp.MustCompile("go of nil func value"),
 		regexp.MustCompile("panic: runtime error: index out of range"),
 		regexp.MustCompile("panic: runtime error: slice bounds out of range"),
 		regexp.MustCompile("panic: runtime error: invalid memory address or nil pointer dereference"),
@@ -64,6 +64,7 @@ var (
 		regexp.MustCompile("Signal 11 from trusted code"),
 		regexp.MustCompile("Signal 6 from untrusted code"),
 		regexp.MustCompile("Signal 11 from untrusted code"),
+		regexp.MustCompile("fatal error: runtime: address space conflict"), // nacl says this when we exhaust all memory
 		// bad:
 		regexp.MustCompile("fatal error: slice capacity smaller than length"),
 		regexp.MustCompile("copyabletopsegment"),
@@ -72,6 +73,8 @@ var (
 		regexp.MustCompile("__go_map_delete"),                       // gccgo
 		regexp.MustCompile("fatal error: runtime_lock: lock count"), // gccgo
 		regexp.MustCompile("fatal error: stopm holding locks"),      // gccgo
+		// gllgo:
+		regexp.MustCompile("unexpected fault address 0x0"),
 		// ssa interp:
 		regexp.MustCompile("ssa/interp\\.\\(\\*frame\\)\\.runDefers"),
 	}
@@ -83,21 +86,18 @@ func init() {
 	}
 
 	knownBuildBugs["gc"] = []*regexp.Regexp{
-		regexp.MustCompile("internal compiler error: walkexpr ORECV"),
-		regexp.MustCompile("internal compiler error: overflow: "),
-		regexp.MustCompile("fallthrough statement out of place"),
-		regexp.MustCompile("cannot take the address of"),
+		regexp.MustCompile("fallthrough statement out of place"),            // https://code.google.com/p/go/issues/detail?id=8041
+		regexp.MustCompile("cannot take the address of"),                    // https://code.google.com/p/go/issues/detail?id=8074
 		regexp.MustCompile("mixture of field:value and value initializers"), // https://code.google.com/p/go/issues/detail?id=8099
-		regexp.MustCompile("out of fixed registers"),
-		regexp.MustCompile("internal compiler error: fault"), // https://code.google.com/p/go/issues/detail?id=8058
-		regexp.MustCompile("SIGABRT: abort"),                 // https://code.google.com/p/go/issues/detail?id=8076
+		regexp.MustCompile("sinit.c:1060 anylit"),                           // https://code.google.com/p/go/issues/detail?id=8099 (under asan)
+		regexp.MustCompile("out of fixed registers"),                        // https://code.google.com/p/go/issues/detail?id=8025, https://code.google.com/p/go/issues/detail?id=8012
+		regexp.MustCompile("gen_as_init"),                                   // https://code.google.com/p/go/issues/detail?id=8058
+		//regexp.MustCompile("SIGABRT: abort"),                 // https://code.google.com/p/go/issues/detail?id=8076
 	}
 	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{}
 	knownBuildBugs["gc.386"] = []*regexp.Regexp{}
 	knownBuildBugs["gc.arm"] = []*regexp.Regexp{}
-	knownBuildBugs["gc.amd64.race"] = []*regexp.Regexp{
-		regexp.MustCompile("internal compiler error: found non-orig name node"),
-	}
+	knownBuildBugs["gc.amd64.race"] = []*regexp.Regexp{}
 	knownBuildBugs["gccgo"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
 		regexp.MustCompile("internal compiler error: in write_specific_type_functions, at go/gofrontend/types.cc:1819"),
@@ -171,55 +171,55 @@ func (t *Test) Do() {
 	if !t.generateSource() {
 		return
 	}
-	if enabled("amd64") && t.Build("gc", "amd64", false) {
+	if enabled("amd64") && t.Build("gc", "", "amd64", false) {
 		t.keep = true
 		return
 	}
-	if enabled("amd64") && enabled("exec") && t.Exec("gc", "amd64", false) {
+	if enabled("amd64") && enabled("exec") && t.Exec("gc", "", "amd64", false) {
 		t.keep = true
 		return
 	}
-	if enabled("386") && t.Build("gc", "386", false) {
+	if enabled("386") && t.Build("gc", "", "386", false) {
 		t.keep = true
 		return
 	}
-	if enabled("386") && enabled("exec") && t.Exec("gc", "386", false) {
+	if enabled("386") && enabled("exec") && t.Exec("gc", "", "386", false) {
 		t.keep = true
 		return
 	}
-	if enabled("arm") && t.Build("gc", "arm", false) {
+	if enabled("arm") && t.Build("gc", "", "arm", false) {
 		t.keep = true
 		return
 	}
-	if enabled("nacl") && t.Build("gc", "amd64p32", false) {
+	if enabled("nacl64") && t.Build("gc", "nacl", "amd64p32", false) {
 		t.keep = true
 		return
 	}
-	if enabled("nacl") && enabled("exec") && t.Exec("gc", "amd64p32", false) {
+	if enabled("nacl64") && enabled("exec") && t.Exec("gc", "nacl", "amd64p32", false) {
 		t.keep = true
 		return
 	}
-	if enabled("race") && t.Build("gc", "amd64", true) {
+	if enabled("nacl32") && t.Build("gc", "nacl", "386", false) {
 		t.keep = true
 		return
 	}
-	if enabled("race") && enabled("exec") && t.Exec("gc", "amd64", true) {
+	if enabled("nacl32") && enabled("exec") && t.Exec("gc", "nacl", "386", false) {
 		t.keep = true
 		return
 	}
-	if enabled("gccgo") && t.Build("gccgo", "amd64", false) {
+	if enabled("race") && t.Build("gc", "", "amd64", true) {
 		t.keep = true
 		return
 	}
-	if enabled("gccgo") && enabled("exec") && t.Exec("gccgo", "amd64", false) {
+	if enabled("race") && enabled("exec") && t.Exec("gc", "", "amd64", true) {
 		t.keep = true
 		return
 	}
-	if enabled("llgo") && t.Build("llgo", "amd64", false) {
+	if enabled("gccgo") && t.Build("gccgo", "", "amd64", false) {
 		t.keep = true
 		return
 	}
-	if enabled("llgo") && enabled("exec") && t.Exec("llgo", "amd64", false) {
+	if enabled("gccgo") && enabled("exec") && t.Exec("gccgo", "", "amd64", false) {
 		t.keep = true
 		return
 	}
@@ -243,11 +243,6 @@ func enabled(what string) bool {
 
 func (t *Test) generateSource() bool {
 	args := []string{"-seed", t.seed, "-dir", t.path}
-	if *checkers == "all" || *checkers == "llgo" {
-		// llgo-build installs all packages that it build,
-		// so multiple packages per test won't work
-		args = append(args, "-singlepkg")
-	}
 	out, err := exec.Command("gosmith", args...).CombinedOutput()
 	if err != nil {
 		log.Printf("failed to execute gosmith for seed %v: %v\n%v\n", t.seed, err, string(out))
@@ -262,31 +257,21 @@ func (t *Test) generateSource() bool {
 	return true
 }
 
-func (t *Test) Build(compiler, goarch string, race bool) bool {
-	typ := compiler + "." + goarch
+func (t *Test) Build(compiler, goos, goarch string, race bool) bool {
+	typ := compiler + "." + goos + "." + goarch
 	if race {
 		typ += ".race"
 	}
 	outbin := filepath.Join(t.path, "bin"+typ)
-
-	command := ""
-	var args []string
-	if compiler == "llgo" {
-		command = "llgo-build"
-		args = []string{"-x" /*"-o", outbin,*/, "main"}
-	} else {
-		command = "go"
-		args = []string{"build", "-o", outbin, "-compiler", compiler}
-		if race {
-			args = append(args, "-race")
-		}
-		args = append(args, "main")
+	args := []string{"build", "-o", outbin, "-compiler", compiler}
+	if race {
+		args = append(args, "-race")
 	}
-
-	cmd := exec.Command(command, args...)
+	args = append(args, "main")
+	cmd := exec.Command("go", args...)
 	cmd.Env = []string{"GOARCH=" + goarch, "GOPATH=" + t.gopath + ":" + os.Getenv("GOPATH")}
-	if goarch == "amd64p32" {
-		cmd.Env = append(cmd.Env, "GOOS=nacl")
+	if goos != "" {
+		cmd.Env = append(cmd.Env, "GOOS="+goos)
 	}
 	cmd.Env = append(cmd.Env, os.Environ()...)
 	out, err := runWithTimeout(cmd)
@@ -323,8 +308,8 @@ func (t *Test) Build(compiler, goarch string, race bool) bool {
 	return true
 }
 
-func (t *Test) Exec(compiler, goarch string, race bool) bool {
-	typ := compiler + "." + goarch
+func (t *Test) Exec(compiler, goos, goarch string, race bool) bool {
+	typ := compiler + "." + goos + "." + goarch
 	if race {
 		typ += ".race"
 	}
@@ -333,8 +318,8 @@ func (t *Test) Exec(compiler, goarch string, race bool) bool {
 		return false
 	}
 	cmd := exec.Command(outbin)
-	if goarch == "amd64p32" {
-		cmd = exec.Command("bash", "go_nacl_amd64p32_exec", outbin)
+	if goos == "nacl" {
+		cmd = exec.Command("bash", "go_nacl_"+goarch+"_exec", outbin)
 	}
 	cmd.Env = []string{"GOMAXPROCS=2", "GOGC=0"}
 	cmd.Env = append(cmd.Env, os.Environ()...)
@@ -516,6 +501,11 @@ func writeStrippedFile(fn string, data []byte) {
 }
 
 func runWithTimeout(cmd *exec.Cmd) ([]byte, error) {
+	var bufout bytes.Buffer
+	var buferr bytes.Buffer
+	cmd.Stdout = &bufout
+	cmd.Stderr = &buferr
+	cmd.Start()
 	done := make(chan bool)
 	defer close(done)
 	go func() {
@@ -532,5 +522,6 @@ func runWithTimeout(cmd *exec.Cmd) ([]byte, error) {
 		}
 		cmd.Process.Signal(syscall.SIGTERM)
 	}()
-	return cmd.CombinedOutput()
+	err := cmd.Wait()
+	return []byte(bufout.String() + buferr.String()), err
 }
