@@ -8,8 +8,12 @@ export ASAN_OPTIONS="detect_leaks=0"
 CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" ./make.bash
 CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=386 go tool dist bootstrap
 CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=arm go tool dist bootstrap
+CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=amd64p32 GOOS=nacl go tool dist bootstrap
+CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=386 GOOS=nacl go tool dist bootstrap
 GOARCH=386 go install std
 GOARCH=arm go install std
+GOARCH=amd64p32 GOOS=nacl go install std
+GOARCH=386 GOOS=nacl go install std
 go install -race -a std
 go install -a std
 go get -u code.google.com/p/gosmith/gosmith
@@ -64,17 +68,15 @@ var (
 		regexp.MustCompile("Signal 11 from trusted code"),
 		regexp.MustCompile("Signal 6 from untrusted code"),
 		regexp.MustCompile("Signal 11 from untrusted code"),
+		regexp.MustCompile("fatal error: out of memory"),
 		regexp.MustCompile("fatal error: runtime: address space conflict"), // nacl says this when we exhaust all memory
+
 		// bad:
-		regexp.MustCompile("fatal error: slice capacity smaller than length"),
-		regexp.MustCompile("copyabletopsegment"),
-		regexp.MustCompile("scanbitvector"),
-		regexp.MustCompile("runtime.gostartcallfn"),
-		regexp.MustCompile("__go_map_delete"),                       // gccgo
-		regexp.MustCompile("fatal error: runtime_lock: lock count"), // gccgo
-		regexp.MustCompile("fatal error: stopm holding locks"),      // gccgo
+		regexp.MustCompile("__go_map_delete"), // gccgo
+		//regexp.MustCompile("fatal error: runtime_lock: lock count"), // gccgo
+		//regexp.MustCompile("fatal error: stopm holding locks"),      // gccgo
 		// gllgo:
-		regexp.MustCompile("unexpected fault address 0x0"),
+		//regexp.MustCompile("unexpected fault address 0x0"),
 		// ssa interp:
 		regexp.MustCompile("ssa/interp\\.\\(\\*frame\\)\\.runDefers"),
 	}
@@ -87,17 +89,16 @@ func init() {
 
 	knownBuildBugs["gc"] = []*regexp.Regexp{
 		regexp.MustCompile("fallthrough statement out of place"),            // https://code.google.com/p/go/issues/detail?id=8041
-		regexp.MustCompile("cannot take the address of"),                    // https://code.google.com/p/go/issues/detail?id=8074
 		regexp.MustCompile("mixture of field:value and value initializers"), // https://code.google.com/p/go/issues/detail?id=8099
 		regexp.MustCompile("sinit.c:1060 anylit"),                           // https://code.google.com/p/go/issues/detail?id=8099 (under asan)
 		regexp.MustCompile("out of fixed registers"),                        // https://code.google.com/p/go/issues/detail?id=8025, https://code.google.com/p/go/issues/detail?id=8012
-		regexp.MustCompile("gen_as_init"),                                   // https://code.google.com/p/go/issues/detail?id=8058
-		//regexp.MustCompile("SIGABRT: abort"),                 // https://code.google.com/p/go/issues/detail?id=8076
 	}
-	knownBuildBugs["gc.amd64"] = []*regexp.Regexp{}
-	knownBuildBugs["gc.386"] = []*regexp.Regexp{}
-	knownBuildBugs["gc.arm"] = []*regexp.Regexp{}
-	knownBuildBugs["gc.amd64.race"] = []*regexp.Regexp{}
+	knownBuildBugs["gc..amd64"] = []*regexp.Regexp{}
+	knownBuildBugs["gc..386"] = []*regexp.Regexp{}
+	knownBuildBugs["gc..arm"] = []*regexp.Regexp{
+		regexp.MustCompile("walkexpr src/cmd/gc/walk.c:938"), // https://code.google.com/p/go/issues/detail?id=8154
+	}
+	knownBuildBugs["gc..amd64.race"] = []*regexp.Regexp{}
 	knownBuildBugs["gccgo"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
 		regexp.MustCompile("internal compiler error: in write_specific_type_functions, at go/gofrontend/types.cc:1819"),
