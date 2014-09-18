@@ -89,11 +89,12 @@ func init() {
 	}
 
 	knownBuildBugs["gc"] = []*regexp.Regexp{
-		regexp.MustCompile("fallthrough statement out of place"),            // https://code.google.com/p/go/issues/detail?id=8041
-		regexp.MustCompile("mixture of field:value and value initializers"), // https://code.google.com/p/go/issues/detail?id=8099
-		regexp.MustCompile("sinit.c:1060 anylit"),                           // https://code.google.com/p/go/issues/detail?id=8099 (under asan)
-		regexp.MustCompile("out of fixed registers"),                        // https://code.google.com/p/go/issues/detail?id=8025, https://code.google.com/p/go/issues/detail?id=8012
-		regexp.MustCompile("autotmp.* recorded as live on entry"),           // https://code.google.com/p/go/issues/detail?id=8761
+		regexp.MustCompile("fallthrough statement out of place"),                      // https://code.google.com/p/go/issues/detail?id=8041
+		regexp.MustCompile("mixture of field:value and value initializers"),           // https://code.google.com/p/go/issues/detail?id=8099
+		regexp.MustCompile("sinit.c:1060 anylit"),                                     // https://code.google.com/p/go/issues/detail?id=8099 (under asan)
+		regexp.MustCompile("out of fixed registers"),                                  // https://code.google.com/p/go/issues/detail?id=8025, https://code.google.com/p/go/issues/detail?id=8012
+		regexp.MustCompile("autotmp.* recorded as live on entry"),                     // https://code.google.com/p/go/issues/detail?id=8761
+		regexp.MustCompile("unexpected return pc for runtime.goexit called from 0x0"), // https://code.google.com/p/go/issues/detail?id=8766
 	}
 	knownBuildBugs["gc..amd64"] = []*regexp.Regexp{}
 	knownBuildBugs["gc..386"] = []*regexp.Regexp{}
