@@ -72,7 +72,8 @@ var (
 		regexp.MustCompile("fatal error: runtime: address space conflict"), // nacl says this when we exhaust all memory
 
 		// bad:
-		regexp.MustCompile("__go_map_delete"), // gccgo
+		regexp.MustCompile("unexpected return pc for runtime.goexit called from 0x0"), // https://code.google.com/p/go/issues/detail?id=8766
+		regexp.MustCompile("__go_map_delete"),                                         // gccgo
 		//regexp.MustCompile("fatal error: runtime_lock: lock count"), // gccgo
 		//regexp.MustCompile("fatal error: stopm holding locks"),      // gccgo
 		// gllgo:
