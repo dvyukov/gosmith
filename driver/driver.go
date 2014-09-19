@@ -58,8 +58,8 @@ var (
 		regexp.MustCompile("panic: "),
 		regexp.MustCompile("go of nil func value"),
 		regexp.MustCompile("fatal error: all goroutines are asleep - deadlock!"),
-		regexp.MustCompile("SIGABRT: abort"), // gc
-		regexp.MustCompile("Aborted"),        // gccgo
+		regexp.MustCompile("SIGABRT: abort"), // gc timeout
+		regexp.MustCompile("Aborted"),        // gccgo timeout
 		regexp.MustCompile("DATA RACE"),      // gosmith can generate a data race
 		// nacl:
 		regexp.MustCompile("Signal 6 from trusted code"),
@@ -87,6 +87,7 @@ func init() {
 	}
 
 	knownBuildBugs["gc"] = []*regexp.Regexp{
+		regexp.MustCompile("SIGABRT: abort"),                                          // build timeout
 		regexp.MustCompile("fallthrough statement out of place"),                      // https://code.google.com/p/go/issues/detail?id=8041
 		regexp.MustCompile("mixture of field:value and value initializers"),           // https://code.google.com/p/go/issues/detail?id=8099
 		regexp.MustCompile("sinit.c:1060 anylit"),                                     // https://code.google.com/p/go/issues/detail?id=8099 (under asan)
