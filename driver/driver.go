@@ -55,14 +55,12 @@ var (
 	knownBuildBugs   = make(map[string][]*regexp.Regexp)
 	knownSsadumpBugs = []*regexp.Regexp{}
 	knownExecBugs    = []*regexp.Regexp{
-		regexp.MustCompile("^panic: "),
+		regexp.MustCompile("panic: "),
 		regexp.MustCompile("go of nil func value"),
-		regexp.MustCompile("panic: runtime error: index out of range"),
-		regexp.MustCompile("panic: runtime error: slice bounds out of range"),
-		regexp.MustCompile("panic: runtime error: invalid memory address or nil pointer dereference"),
 		regexp.MustCompile("fatal error: all goroutines are asleep - deadlock!"),
 		regexp.MustCompile("SIGABRT: abort"), // gc
 		regexp.MustCompile("Aborted"),        // gccgo
+		regexp.MustCompile("DATA RACE"),      // gosmith can generate a data race
 		// nacl:
 		regexp.MustCompile("Signal 6 from trusted code"),
 		regexp.MustCompile("Signal 11 from trusted code"),
