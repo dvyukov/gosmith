@@ -121,10 +121,20 @@ func lvalue(t *Type) string {
 }
 
 func lvalueOrBlank(t *Type) string {
-	if rndBool() {
-		return "_"
+	for {
+		switch choice("lvalue", "map", "blank") {
+		case "lvalue":
+			return lvalue(t)
+		case "map":
+			if e := exprIndexMap(t); e != "" {
+				return e
+			}
+		case "blank":
+			return "_"
+		default:
+			panic("bad")
+		}
 	}
-	return lvalue(t)
 }
 
 func fmtRvalueList(list []*Type) string {
@@ -144,7 +154,7 @@ func fmtLvalueList(list []*Type) string {
 		if i != 0 {
 			buf.Write([]byte{','})
 		}
-		buf.WriteString(lvalue(t))
+		buf.WriteString(lvalueOrBlank(t))
 	}
 	return buf.String()
 }
