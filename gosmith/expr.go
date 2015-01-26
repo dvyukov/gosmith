@@ -137,6 +137,21 @@ func lvalueOrBlank(t *Type) string {
 	}
 }
 
+func lvalueOrMapIndex(t *Type) string {
+	for {
+		switch choice("lvalue", "map") {
+		case "lvalue":
+			return lvalue(t)
+		case "map":
+			if e := exprIndexMap(t); e != "" {
+				return e
+			}
+		default:
+			panic("bad")
+		}
+	}
+}
+
 func fmtRvalueList(list []*Type) string {
 	var buf bytes.Buffer
 	for i, t := range list {
@@ -166,8 +181,10 @@ func fmtOasVarList(list []*Type) (str string, newVars []*Var) {
 		expr := "_"
 		// First, try to find an existing var in the same scope.
 		if rndBool() {
-			for _, v := range allVars {
+			for i, v := range allVars {
 				if v.typ == t && v.block == curBlock {
+					allVars[i] = allVars[len(allVars)-1]
+					allVars = allVars[:len(allVars)-1]
 					expr = v.id
 					break
 				}
@@ -395,15 +412,15 @@ func exprSlice(ret *Type) string {
 	}
 	i0 := ""
 	if rndBool() {
-		i0 = lvalue(intType)
+		i0 = nonconstRvalue(intType)
 	}
 	i2 := ""
 	if rndBool() {
-		i2 = ":" + lvalue(intType)
+		i2 = ":" + nonconstRvalue(intType)
 	}
 	i1 := ":"
 	if rndBool() || i2 != "" {
-		i1 = ":" + lvalue(intType)
+		i1 = ":" + nonconstRvalue(intType)
 	}
 	return F("(%v)[%v%v%v]", rvalue(ret), i0, i1, i2)
 }
