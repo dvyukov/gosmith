@@ -55,14 +55,7 @@ func stmtAs() {
 }
 
 func stmtInc() {
-	if rndBool() {
-		m := exprIndexMap(atype(ClassNumeric))
-		if m != "" {
-			line("%v %v", m, choice("--", "++"))
-			return
-		}
-	}
-	line("%v %v", lvalue(atype(ClassNumeric)), choice("--", "++"))
+	line("%v %v", lvalueOrMapIndex(atype(ClassNumeric)), choice("--", "++"))
 }
 
 func stmtIf() {
@@ -140,7 +133,7 @@ func stmtFor() {
 			ch := rvalue(cht)
 			switch choice("one", "oneDecl") {
 			case "one":
-				line("for %v = range %v {", lvalue(cht.ktyp), ch)
+				line("for %v = range %v {", lvalueOrBlank(cht.ktyp), ch)
 			case "oneDecl":
 				id := newId("Var")
 				line("for %v := range %v {", id, ch)
@@ -153,9 +146,9 @@ func stmtFor() {
 			m := rvalue(t)
 			switch choice("one", "two", "oneDecl", "twoDecl") {
 			case "one":
-				line("for %v = range %v {", lvalue(t.ktyp), m)
+				line("for %v = range %v {", lvalueOrBlank(t.ktyp), m)
 			case "two":
-				line("for %v, %v = range %v {", lvalue(t.ktyp), lvalue(t.vtyp), m)
+				line("for %v, %v = range %v {", lvalueOrBlank(t.ktyp), lvalueOrBlank(t.vtyp), m)
 			case "oneDecl":
 				id := newId("Var")
 				line("for %v := range %v {", id, m)
@@ -199,7 +192,7 @@ func stmtSimple(oas bool, newVars *[]*Var) string {
 	case "empty":
 		return ""
 	case "inc":
-		return F("%v %v", lvalue(atype(ClassNumeric)), choice("--", "++"))
+		return F("%v %v", lvalueOrMapIndex(atype(ClassNumeric)), choice("--", "++"))
 	case "assign":
 		list := atypeList(TraitAny)
 		return F("%v = %v", fmtLvalueList(list), fmtRvalueList(list))
@@ -238,7 +231,7 @@ func stmtRecv() {
 	ch := rvalue(t)
 	switch choice("normal", "decl") {
 	case "normal":
-		line("%v, %v = <-%v", lvalue(t.ktyp), lvalue(boolType), ch)
+		line("%v, %v = <-%v", lvalueOrBlank(t.ktyp), lvalueOrBlank(boolType), ch)
 	case "decl":
 		vv := newId("Var")
 		ok := newId("Var")
@@ -305,9 +298,9 @@ func stmtSelect() {
 		} else {
 			switch choice("one", "two", "oneDecl", "twoDecl") {
 			case "one":
-				line("case %v = <-%v:", lvalue(elem), ch)
+				line("case %v = <-%v:", lvalueOrBlank(elem), ch)
 			case "two":
-				line("case %v, %v = <-%v:", lvalue(elem), lvalue(boolType), ch)
+				line("case %v, %v = <-%v:", lvalueOrBlank(elem), lvalueOrBlank(boolType), ch)
 			case "oneDecl":
 				vv := newId("Var")
 				line("case %v := <-%v:", vv, ch)
