@@ -61,6 +61,8 @@ var (
 		regexp.MustCompile("SIGABRT: abort"), // gc timeout
 		regexp.MustCompile("Aborted"),        // gccgo timeout
 		regexp.MustCompile("DATA RACE"),      // gosmith can generate a data race
+		regexp.MustCompile("limit on 8192 simultaneously alive goroutines is exceeded"),
+
 		// nacl:
 		regexp.MustCompile("Signal 6 from trusted code"),
 		regexp.MustCompile("Signal 11 from trusted code"),
