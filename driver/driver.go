@@ -54,6 +54,9 @@ var (
 
 	knownBuildBugs   = make(map[string][]*regexp.Regexp)
 	knownSsadumpBugs = []*regexp.Regexp{}
+	knownCoverBugs = []*regexp.Regexp{
+		regexp.MustCompile("syntax error near GoCover_"), // http://golang.org/issue/10163
+	}
 	knownExecBugs    = []*regexp.Regexp{
 		regexp.MustCompile("panic: "),
 		regexp.MustCompile("go of nil func value"),
@@ -350,6 +353,12 @@ func (t *Test) Cover(compiler, goos, goarch string, race bool) bool {
 		}
 	}
 	for _, known := range knownBuildBugs["all"] {
+		if known.Match(out) {
+			atomic.AddUint64(&statKnown, 1)
+			return false
+		}
+	}
+	for _, known := range knownCoverBugs {
 		if known.Match(out) {
 			atomic.AddUint64(&statKnown, 1)
 			return false
