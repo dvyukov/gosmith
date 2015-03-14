@@ -284,6 +284,17 @@ func serializeProgram(dir string) {
 			serializeBlock(files[rnd(len(files))], decl, 0)
 		}
 	}
+
+	path := filepath.Join(dir, "src", "a")
+	os.MkdirAll(path, os.ModePerm)
+	fname := filepath.Join(path, "0_test.go")
+	f, err := os.Create(fname)
+	if err != nil {
+		fmt.Fprintf(os.Stdout, "failed to create a file: %v\n", err)
+		os.Exit(1)
+	}
+	f.Write([]byte("package a\n"))
+	f.Close()
 }
 
 func serializeBlock(w *bufio.Writer, b *Block, d int) {

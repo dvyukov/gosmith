@@ -41,7 +41,7 @@ import (
 
 var (
 	parallelism = flag.Int("p", runtime.NumCPU(), "number of parallel tests")
-	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,nacl64,nacl32,race,gccgo,ssa,gofmt,exec)")
+	checkers    = flag.String("checkers", "all", "comma-delimited list of checkers (amd64,386,arm,nacl64,nacl32,race,gccgo,ssa,gofmt,cover,exec)")
 	workDir     = flag.String("workdir", "./work", "working directory for temp files")
 	timeout     = flag.Int64("timeout", 10, "task timeout in seconds")
 
@@ -234,6 +234,11 @@ func (t *Test) Do() {
 		t.keep = true
 		return
 	}
+	// TODO: add other variants (386, arm, nacl, race, etc)
+	if enabled("cover") && t.Cover("gc", "", "amd64", false) {
+		t.keep = true
+		return
+	}
 	if enabled("gofmt") && t.Gofmt() {
 		t.keep = true
 		return
@@ -307,6 +312,57 @@ func (t *Test) Build(compiler, goos, goarch string, race bool) bool {
 		outf.Close()
 	}
 	log.Printf("%v build failed, seed %v\n", typ, t.seed)
+	atomic.AddUint64(&statBuild, 1)
+	return true
+}
+
+func (t *Test) Cover(compiler, goos, goarch string, race bool) bool {
+	typ := "cover." + compiler + "." + goos + "." + goarch
+	if race {
+		typ += ".race"
+	}
+	outbin := filepath.Join(t.path, "coverbin"+typ)
+	args := []string{"test", "-c", "-cover", "-o", outbin, "-compiler", compiler}
+	if race {
+		args = append(args, "-race")
+	}
+	args = append(args, "a")
+	cmd := exec.Command("go", args...)
+	cmd.Env = []string{"GOARCH=" + goarch, "GOPATH=" + t.gopath + ":" + os.Getenv("GOPATH")}
+	if goos != "" {
+		cmd.Env = append(cmd.Env, "GOOS="+goos)
+	}
+	cmd.Env = append(cmd.Env, os.Environ()...)
+	out, err := runWithTimeout(cmd)
+	if err == nil {
+		return false
+	}
+	for _, known := range knownBuildBugs[typ] {
+		if known.Match(out) {
+			atomic.AddUint64(&statKnown, 1)
+			return false
+		}
+	}
+	for _, known := range knownBuildBugs[compiler] {
+		if known.Match(out) {
+			atomic.AddUint64(&statKnown, 1)
+			return false
+		}
+	}
+	for _, known := range knownBuildBugs["all"] {
+		if known.Match(out) {
+			atomic.AddUint64(&statKnown, 1)
+			return false
+		}
+	}
+	outf, err := os.Create(filepath.Join(t.path, typ))
+	if err != nil {
+		log.Printf("failed to create output file: %v", err)
+	} else {
+		outf.Write(out)
+		outf.Close()
+	}
+	log.Printf("%v failed, seed %v\n", typ, t.seed)
 	atomic.AddUint64(&statBuild, 1)
 	return true
 }
