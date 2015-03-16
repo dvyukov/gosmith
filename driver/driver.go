@@ -72,7 +72,7 @@ var (
 		regexp.MustCompile("fatal error: runtime: address space conflict"), // nacl says this when we exhaust all memory
 
 		// bad:
-		regexp.MustCompile("unexpected return pc for runtime.goexit called from 0x0"), // https://code.google.com/p/go/issues/detail?id=8766
+		regexp.MustCompile("unexpected return pc for runtime.goexit called from 0x0"), // http://golang.org/issue/8766
 		regexp.MustCompile("__go_map_delete"),                                         // gccgo
 		//regexp.MustCompile("fatal error: runtime_lock: lock count"), // gccgo
 		//regexp.MustCompile("fatal error: stopm holding locks"),      // gccgo
@@ -90,19 +90,24 @@ func init() {
 
 	knownBuildBugs["gc"] = []*regexp.Regexp{
 		regexp.MustCompile("SIGABRT: abort"),                                          // build timeout
-		regexp.MustCompile("fallthrough statement out of place"),                      // https://code.google.com/p/go/issues/detail?id=8041
-		regexp.MustCompile("mixture of field:value and value initializers"),           // https://code.google.com/p/go/issues/detail?id=8099
-		regexp.MustCompile("sinit.c:1060 anylit"),                                     // https://code.google.com/p/go/issues/detail?id=8099 (under asan)
-		//regexp.MustCompile("out of fixed registers"),                                  // https://code.google.com/p/go/issues/detail?id=8025, https://code.google.com/p/go/issues/detail?id=8012
-		//regexp.MustCompile("autotmp.* recorded as live on entry"),                     // https://code.google.com/p/go/issues/detail?id=8761
-		//regexp.MustCompile("unexpected return pc for runtime.goexit called from 0x0"), // https://code.google.com/p/go/issues/detail?id=8766
+		regexp.MustCompile("fallthrough statement out of place"),                      // http://golang.org/issue/8041
+		regexp.MustCompile("mixture of field:value and value initializers"),           // http://golang.org/issue/8099
+		regexp.MustCompile("sinit.c:1060 anylit"),                                     // http://golang.org/issue/8099 (under asan)
 	}
-	knownBuildBugs["gc..amd64"] = []*regexp.Regexp{}
+	knownBuildBugs["gc..amd64"] = []*regexp.Regexp{
+		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/8025, http://golang.org/issue/8012, https://github.com/golang/go/issues/10088
+	}
+	knownBuildBugs["gc.nacl.amd64p32"] = []*regexp.Regexp{
+		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/8025, http://golang.org/issue/8012, https://github.com/golang/go/issues/10088
+	}
 	knownBuildBugs["gc..386"] = []*regexp.Regexp{}
 	knownBuildBugs["gc..arm"] = []*regexp.Regexp{
-		regexp.MustCompile("walkexpr src/cmd/gc/walk.c:938"), // https://code.google.com/p/go/issues/detail?id=8154
+		regexp.MustCompile("walkexpr src/cmd/gc/walk.c:938"), // http://golang.org/issue/8154
+		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/10088
 	}
-	knownBuildBugs["gc..amd64.race"] = []*regexp.Regexp{}
+	knownBuildBugs["gc..amd64.race"] = []*regexp.Regexp{
+		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/8025, http://golang.org/issue/8012
+	}
 	knownBuildBugs["gccgo"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
 		regexp.MustCompile("internal compiler error: in write_specific_type_functions, at go/gofrontend/types.cc:1819"),
@@ -455,7 +460,7 @@ func (t *Test) GofmtFile(fname string) bool {
 	outf2.Write(formatted2)
 	outf2.Close()
 
-	// Fails too often due to https://code.google.com/p/go/issues/detail?id=8021
+	// Fails too often due to http://golang.org/issue/8021
 	if true {
 		if bytes.Compare(formatted, formatted2) != 0 {
 			log.Printf("nonidempotent gofmt, seed %v\n", t.seed)
