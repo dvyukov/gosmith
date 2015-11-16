@@ -2,14 +2,12 @@ package main
 
 /*
 Usage instructions:
-hg sync
-hg clpatch 93420045
-export ASAN_OPTIONS="detect_leaks=0"
-CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" ./make.bash
-CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=386 go tool dist bootstrap
-CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=arm go tool dist bootstrap
-CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=amd64p32 GOOS=nacl go tool dist bootstrap
-CC=clang CFLAGS="-fsanitize=address -fno-omit-frame-pointer -fno-common -O2" GOARCH=386 GOOS=nacl go tool dist bootstrap
+git sync
+./make.bash
+GOARCH=386 go tool dist bootstrap
+GOARCH=arm go tool dist bootstrap
+GOARCH=amd64p32 GOOS=nacl go tool dist bootstrap
+GOARCH=386 GOOS=nacl go tool dist bootstrap
 GOARCH=386 go install std
 GOARCH=arm go install std
 GOARCH=amd64p32 GOOS=nacl go install std
@@ -54,10 +52,10 @@ var (
 
 	knownBuildBugs   = make(map[string][]*regexp.Regexp)
 	knownSsadumpBugs = []*regexp.Regexp{}
-	knownCoverBugs = []*regexp.Regexp{
+	knownCoverBugs   = []*regexp.Regexp{
 		regexp.MustCompile("syntax error near GoCover_"), // http://golang.org/issue/10163
 	}
-	knownExecBugs    = []*regexp.Regexp{
+	knownExecBugs = []*regexp.Regexp{
 		regexp.MustCompile("panic: "),
 		regexp.MustCompile("go of nil func value"),
 		regexp.MustCompile("fatal error: all goroutines are asleep - deadlock!"),
@@ -91,25 +89,20 @@ func init() {
 		regexp.MustCompile("constant .* overflows"), // problem is gosmith
 	}
 
-	knownBuildBugs["gc"] = []*regexp.Regexp{
-		regexp.MustCompile("SIGABRT: abort"),                                          // build timeout
-		regexp.MustCompile("fallthrough statement out of place"),                      // http://golang.org/issue/8041
-		regexp.MustCompile("mixture of field:value and value initializers"),           // http://golang.org/issue/8099
-		regexp.MustCompile("sinit.c:1060 anylit"),                                     // http://golang.org/issue/8099 (under asan)
-	}
-	knownBuildBugs["gc..amd64"] = []*regexp.Regexp{
-		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/8025, http://golang.org/issue/8012, https://github.com/golang/go/issues/10088
-	}
+	knownBuildBugs["gc"] = []*regexp.Regexp{}
+	knownBuildBugs["gc..amd64"] = []*regexp.Regexp{}
 	knownBuildBugs["gc.nacl.amd64p32"] = []*regexp.Regexp{
-		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/8025, http://golang.org/issue/8012, https://github.com/golang/go/issues/10088
+		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/8012, https://github.com/golang/go/issues/10088
 	}
-	knownBuildBugs["gc..386"] = []*regexp.Regexp{}
+	knownBuildBugs["gc..386"] = []*regexp.Regexp{
+		regexp.MustCompile("internal compiler error: out of fixed registers"), // https://github.com/golang/go/issues/13277
+	}
 	knownBuildBugs["gc..arm"] = []*regexp.Regexp{
-		regexp.MustCompile("walkexpr src/cmd/gc/walk.c:938"), // http://golang.org/issue/8154
 		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/10088
 	}
 	knownBuildBugs["gc..amd64.race"] = []*regexp.Regexp{
-		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/8025, http://golang.org/issue/8012
+		regexp.MustCompile("internal compiler error: out of fixed registers"), // http://golang.org/issue/8012
+		regexp.MustCompile("internal compiler error: treecopy Name"),          // http://golang.org/issue/12225
 	}
 	knownBuildBugs["gccgo"] = []*regexp.Regexp{
 		regexp.MustCompile("internal compiler error: in fold_binary_loc, at fold-const.c:10024"),
@@ -136,7 +129,6 @@ func init() {
 func main() {
 	flag.Parse()
 	log.Printf("testing with %v workers", *parallelism)
-	os.Setenv("ASAN_OPTIONS", "detect_leaks=0 detect_odr_violation=2 detect_stack_use_after_return=1")
 	os.MkdirAll(filepath.Join(*workDir, "tmp"), os.ModePerm)
 	os.MkdirAll(filepath.Join(*workDir, "bug"), os.ModePerm)
 	rand.Seed(time.Now().UnixNano())
@@ -347,7 +339,7 @@ func (t *Test) Cover(compiler, goos, goarch string, race bool) bool {
 	if err == nil {
 		return false
 	}
-	for _, known := range knownBuildBugs[compiler + "." + goos + "." + goarch] {
+	for _, known := range knownBuildBugs[compiler+"."+goos+"."+goarch] {
 		if known.Match(out) {
 			atomic.AddUint64(&statKnown, 1)
 			return false
